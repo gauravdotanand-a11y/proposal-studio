@@ -1,0 +1,155 @@
+# Synthetic example data only.
+meta:
+  title: Invoice Intake Automation
+  subtitle: Proposed solution overview
+  brand: Acme
+  footer: "(c) 2026 Acme. All rights reserved."
+slides:
+  - type: title
+  - type: flow
+    flow:
+      title: HL Flow of Automation
+      nodes:
+        - {id: bot, label: Bot picks next item, kind: bot}
+        - {id: get, label: Get extracted data}
+        - {id: create, label: Create record in target app}
+        - {id: ok, label: "Record created?", kind: decision}
+        - {id: manual, label: Move to manual queue, kind: human}
+        - {id: validate, label: Validate and process per SOP}
+        - {id: closed, label: "Closed successfully?", kind: decision}
+        - {id: report, label: Create daily report, kind: end}
+      edges:
+        - {src: bot, dst: get}
+        - {src: get, dst: create}
+        - {src: create, dst: ok}
+        - {src: ok, dst: manual, label: "No"}
+        - {src: ok, dst: validate, label: "Yes"}
+        - {src: validate, dst: closed}
+        - {src: closed, dst: manual, label: "No"}
+        - {src: closed, dst: report, label: "Yes"}
+      notes:
+        - Success rate depends on data extracted from documents.
+  - type: assumptions
+    assumptions:
+      items:
+        - The bot only retrieves details from the data source and creates records.
+        - Extracted data is provided by the GenAI team.
+        - Unhandled validation errors move the record to the manual queue.
+        - Test data and lower-environment access will be provided.
+  - type: gantt
+    gantt:
+      title: HL Execution Plan
+      start_date: 2026-11-02
+      activities:
+        - {name: Requirement gathering / BRD, start_week: 1, end_week: 1}
+        - {name: Implementation, start_week: 2, end_week: 6}
+        - {name: UAT, start_week: 7, end_week: 8}
+        - {name: Deployment, start_week: 9, end_week: 9}
+        - {name: Hypercare, start_week: 10, end_week: 10}
+      note: Prod deployment dates may change per the peak-season calendar.
+  - type: cost
+    cost:
+      lines:
+        - {head: Development Cost (One Time), values: [75000, 0, 0, 0], kind: one_time}
+        - {head: Infrastructure Cost, values: [12000, 12000, 12000, 12000], kind: recurring}
+        - {head: Support Cost, values: [8000, 46000, 46000, 46000], kind: recurring}
+      drivers:
+        - {name: Invoice data entry, annual_volume: 120000, minutes_saved: 4, hourly_rate: 30, success_rate: 0.85, ramp: [0.1, 1, 1, 1]}
+        - {name: Exception handling, annual_volume: 30000, minutes_saved: 6, hourly_rate: 30, success_rate: 0.6, ramp: [0.1, 1, 1, 1]}
+  - type: solution
+    solution:
+      title: Invoice intake using OCR and Generative AI
+      stages:
+        - {heading: Input Sources, title: "Mailbox + Document store", body: "Scanned invoices and PDFs"}
+        - {heading: ML / GenAI, title: Extract fields, body: "OCR + LLM structure the data", ai: true}
+        - {heading: Central Storage, title: Database, body: "Extracted data and history"}
+        - {heading: Rule Engine, title: Validate, body: "Checks against SOP rules"}
+        - {heading: UI / UX, title: Analyst review, body: "Override or confirm values"}
+        - {heading: Automation, title: RPA bot, body: "Creates records and closes"}
+      blocks:
+        - {heading: Solution, text: "Automate and streamline invoice data entry using OCR, GenAI and RPA so the process becomes faster, accurate and SOP compliant."}
+        - {heading: In-scope volume, text: "Phase 1: standard purchase invoices."}
+        - {heading: Infrastructure need, text: "LLM service, SQL database, blob storage, RPA licences."}
+      steps:
+        - {label: Fetch, text: API opens the document from the store.}
+        - {label: Extract, text: ML/GenAI extracts and structures the data.}
+        - {label: Validate, text: Rule engine checks values against SOPs.}
+        - {label: Review, text: Analyst verifies flagged items if needed.}
+        - {label: Automate, text: RPA creates and closes the record.}
+  - type: flow
+    flow:
+      title: TO BE
+      nodes:
+        - {id: a, kind: bot, label: Pick unassigned case, lane: RPA Bot}
+        - {id: b, kind: process, label: Find request type, lane: RPA Bot}
+        - {id: c, kind: ai, label: Read and extract notes, lane: RPA Bot}
+        - {id: d, kind: data, label: Save extracted fields, lane: RPA Bot}
+        - {id: e, kind: human, label: Validate and update fields, lane: Agent}
+        - {id: f, kind: process, label: Download final sheet, lane: Agent}
+      edges:
+        - {src: a, dst: b}
+        - {src: b, dst: c}
+        - {src: c, dst: d, note: "~60-70% success expected"}
+        - {src: d, dst: e}
+        - {src: e, dst: f}
+      notes:
+        - Success rate depends on data extracted from documents.
+  - type: compare
+    compare:
+      title: Plan revision (4 Aug)
+      previous_label: Previous version
+      updated_label: "Updated version (4 Aug)"
+      previous:
+        start_date: 2026-11-02
+        activities:
+          - {name: Requirement gathering / BRD, start_week: 1, end_week: 1}
+          - {name: Implementation, start_week: 2, end_week: 6}
+          - {name: UAT, start_week: 7, end_week: 8}
+          - {name: Deployment, start_week: 9, end_week: 9}
+          - {name: Hypercare, start_week: 10, end_week: 10}
+      updated:
+        start_date: 2026-11-02
+        activities:
+          - {name: Requirement gathering / BRD, start_week: 1, end_week: 1}
+          - {name: Implementation, start_week: 2, end_week: 7}
+          - {name: UAT, start_week: 8, end_week: 9}
+          - {name: Deployment, start_week: 10, end_week: 10}
+          - {name: Hypercare, start_week: 11, end_week: 11}
+  - type: gantt
+    gantt:
+      title: Execution plan with sections
+      start_date: 2026-11-02
+      activities:
+        - {name: Implementation, start_week: 1, end_week: 1, section: New error codes}
+        - {name: UAT, start_week: 2, end_week: 2, section: New error codes}
+        - {name: Deployment, start_week: 3, end_week: 3, section: New error codes}
+        - {name: Requirement gathering / BRD update, start_week: 1, end_week: 1, section: Reporting and INC monitoring}
+        - {name: Implementation, start_week: 2, end_week: 5, section: Reporting and INC monitoring}
+        - {name: UAT, start_week: 6, end_week: 7, section: Reporting and INC monitoring}
+        - {name: Deployment, start_week: 8, end_week: 8, section: Reporting and INC monitoring}
+      note: Prod deployment dates may change per the peak-season calendar.
+  - type: scope
+    scope:
+      title: Scope
+      in_scope:
+        - Standard purchase invoices received in the shared mailbox
+        - Data extraction, validation against SOP rules, record creation and closure
+        - Routing of exceptions to the manual queue
+      out_scope:
+        - Handwritten and non-standard document types
+        - Nested SOPs and multi-step approvals
+        - Downstream payment processing
+      note: Scope changes after BRD sign-off follow change control.
+  - type: risks
+    risks:
+      items:
+        - {risk: Extraction accuracy lower than assumed on poor scans, impact: High, mitigation: Confidence thresholds with analyst review; track accuracy weekly}
+        - {risk: Lower environment not in sync with production, impact: Medium, mitigation: Agree test data and sync plan before UAT}
+        - {risk: SME availability during UAT, impact: Medium, mitigation: Book SME slots in the plan; daily feedback call}
+        - {risk: Licence cost differs from estimate, impact: Low, mitigation: Re-baseline after infrastructure sizing}
+  - type: next_steps
+    next_steps:
+      items:
+        - {action: Confirm scope and assumptions, owner: Business owner, due: Week 1}
+        - {action: Provide test data and environment access, owner: IT, due: Week 1}
+        - {action: Start BRD workshops with SMEs, owner: Solution team, due: Week 2}

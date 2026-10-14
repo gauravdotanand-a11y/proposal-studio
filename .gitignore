@@ -1,0 +1,12 @@
+node_modules/
+.venv/
+dist/
+out/
+data/
+__pycache__/
+.pytest_cache/
+*.pptx
+*.jpg
+*.png
+.claude/
+.DS_Store
