@@ -212,7 +212,7 @@ def _site_of(box: Box, p: Pt) -> int | None:
     return None
 
 
-LABEL_W, LABEL_H = Inches(0.4), Inches(0.25)
+LABEL_W, LABEL_H = Inches(0.34), Inches(0.25)
 
 
 def _label_candidates(points: list[Pt]) -> list[tuple[int, int]]:
@@ -238,20 +238,67 @@ def _label_candidates(points: list[Pt]) -> list[tuple[int, int]]:
             (int(x0 + Inches(0.3)), int(top + sign * LABEL_H))]
 
 
+SLACK = Inches(0.03)
+
+
 def _overlap(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> bool:
     return a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
 
 
-def _pick_label(points: list[Pt], taken: list[tuple], boxes: list[Box]) -> tuple[int, int]:
-    cands = _label_candidates(points)
+def _pick_label(points: list[Pt], taken: list[tuple], boxes: list[Box], pref: list[tuple[int, int]] | None = None) -> tuple[int, int]:
+    cands = (pref or []) + _label_candidates(points)
     for cx, ty in cands:
-        r = (cx - LABEL_W / 2, ty, LABEL_W, LABEL_H)
+        r = (cx - LABEL_W / 2 + SLACK, ty + SLACK, LABEL_W - 2 * SLACK, LABEL_H - 2 * SLACK)  # text has air inside the box
         if not any(_overlap(r, t) for t in taken) and not any(_overlap(r, b) for b in boxes):
             taken.append(r)
             return cx, ty
     cx, ty = cands[0]
     taken.append((cx - LABEL_W / 2, ty, LABEL_W, LABEL_H))
     return cx, ty
+
+
+def _branch_prefs(routes: list[list[Pt]]) -> dict[int, list[tuple[int, int]]]:
+    """Preferred label spots so sibling branches are told apart.
+
+    Edges that leave the same point in the same horizontal direction share their first stretch.
+    The edge that carries on gets its label above the line beyond the bend; the edge that turns
+    gets it beside its vertical leg, so each label sits on the part unique to its arrow.
+    """
+    groups: dict[tuple, list[int]] = {}
+    for i, pts in enumerate(routes):
+        (x0, y0), (x1, y1) = pts[0], pts[1]
+        if abs(y0 - y1) < 1 and abs(x1 - x0) >= 1:
+            groups.setdefault((round(x0), round(y0), 1 if x1 > x0 else -1), []).append(i)
+    out: dict[int, list[tuple[int, int]]] = {}
+    half = LABEL_W / 2
+    for (x0, y0, sign), idx in groups.items():
+        if len(idx) < 2:
+            continue
+        shared = min(abs(routes[i][1][0] - x0) for i in idx)
+        for i in idx:
+            pts = routes[i]
+            first = abs(pts[1][0] - x0)
+            if first > shared + 1:  # carries on past the bend
+                room = first - shared
+                cx = x0 + sign * (shared + room / 2) if room >= LABEL_W else x0 + sign * (first - half)
+                out[i] = [(int(cx), int(y0 - LABEL_H - Inches(0.02)))]
+            elif len(pts) >= 3 and abs(pts[2][0] - pts[1][0]) < 1:  # turns into a vertical leg
+                down = pts[2][1] > pts[1][1]
+                ty = pts[1][1] + Inches(0.05) if down else pts[1][1] - LABEL_H - Inches(0.05)
+                out[i] = [(int(pts[1][0] + sign * (Inches(0.03) + half)), int(ty))]
+    return out
+
+
+def _note_rects(pts: list[Pt], src: Box, dst: Box, gutter: float) -> list[tuple[int, int, int, int]]:
+    """Candidate boxes (x, y, w, h) for an arrow annotation, best first."""
+    gx, gy, gw, gh = _note_box(pts, gutter)
+    w, h, pad = gw, gh, Inches(0.04)
+    sx, sy, sw, sh = src
+    dx, dy, dw, dh = dst
+    return [(gx, gy, gw, gh),
+            (int(sx + sw - w), int(sy + sh + pad), w, h),   # under the source box, flush right
+            (int(dx), int(dy + dh + pad), w, h),            # under the destination box
+            (int(sx + sw - w), int(sy - h - pad), w, h)]    # above the source box
 
 
 # ------------------------------------------------------------ shared pieces
@@ -281,10 +328,15 @@ def _note_box(pts: list[Pt], gutter: float) -> tuple[int, int, int, int]:
 def _build_edges(f: Flow, pos: dict[str, Box], gap_x: float, corr: float) -> list[dict]:
     edges = []
     taken: list[tuple] = []
+    routes: list[list[Pt]] = []
     for e in f.edges:
         obstacles = [b for i, b in pos.items() if i not in (e.src, e.dst)]
-        pts = _route(pos[e.src], pos[e.dst], obstacles, gap_x, corr)
-        lx, ly = _pick_label(pts, taken, list(pos.values())) if e.label else _label_candidates(pts)[0]
+        routes.append(_route(pos[e.src], pos[e.dst], obstacles, gap_x, corr))
+    prefs = _branch_prefs(routes)
+    note_taken: list[tuple] = []
+    for k, e in enumerate(f.edges):
+        pts = routes[k]
+        lx, ly = _pick_label(pts, taken, list(pos.values()), prefs.get(k)) if e.label else _label_candidates(pts)[0]
         edge = {"src": e.src, "dst": e.dst, "label": e.label, "note": e.note,
                 "points": [[int(round(px)), int(round(py))] for px, py in pts],
                 "label_x": lx, "label_y": ly, "begin_site": None, "end_site": None, "note_box": None}
@@ -292,7 +344,13 @@ def _build_edges(f: Flow, pos: dict[str, Box], gap_x: float, corr: float) -> lis
             edge["begin_site"] = _site_of(pos[e.src], pts[0])
             edge["end_site"] = _site_of(pos[e.dst], pts[-1])
         if e.note:
-            edge["note_box"] = list(_note_box(pts, gap_x))
+            rects = _note_rects(pts, pos[e.src], pos[e.dst], gap_x)
+            free = [r for r in rects
+                    if not any(_overlap(r, b) for b in pos.values())
+                    and not any(_overlap(r, t) for t in note_taken + taken)]
+            chosen = free[0] if free else rects[0]
+            note_taken.append(chosen)
+            edge["note_box"] = list(chosen)
         edges.append(edge)
     return edges
 
@@ -309,7 +367,8 @@ def _swimlane(f: Flow, lanes: list[str], top_y: float) -> dict:
     n_layers = max(layer.values()) + 1
     label_w = Inches(1.15)
     left = T.MARGIN
-    avail_w = T.SLIDE_W - 2 * T.MARGIN - label_w
+    lane_pad = Inches(0.1)
+    avail_w = T.SLIDE_W - 2 * T.MARGIN - label_w - 2 * lane_pad
     gutter_min, gutter_floor = Inches(0.4), Inches(0.15)
     n_gaps = max(0, n_layers - 1)
     roomy = (avail_w - gutter_min * n_gaps) / n_layers
@@ -351,7 +410,7 @@ def _swimlane(f: Flow, lanes: list[str], top_y: float) -> dict:
     pos: dict[str, Box] = {}
     for n in f.nodes:
         h = BOX_H + DECISION_EXTRA_H if n.kind == "decision" else BOX_H
-        x = left + label_w + layer[n.id] * (box_w + gap_x)
+        x = left + label_w + lane_pad + layer[n.id] * (box_w + gap_x)
         cy = lane_top[lane_of[n.id]] + slot[n.id] * cell_h + cell_h / 2
         pos[n.id] = (float(int(x)), float(int(cy - h / 2)), float(int(box_w)), float(int(h)))
 

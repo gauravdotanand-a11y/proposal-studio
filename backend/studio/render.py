@@ -381,7 +381,9 @@ def _flow_slide(slide, f: Flow):
         tf = shp.text_frame
         tf.margin_left = tf.margin_right = Inches(0.05)
         tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-        size = Pt(9) if n["w"] < Inches(1.4) else Pt(10)
+        size = Pt(9) if n["w"] < Inches(1.4) or n["kind"] == "decision" else Pt(10)
+        if n["kind"] == "decision":
+            tf.margin_left = tf.margin_right = 0
         _text(tf, n["label"], size, False, T.WHITE if n["kind"] == "ai" else T.NAVY, PP_ALIGN.CENTER)
         shapes[n["id"]] = shp
         if n.get("badge"):
@@ -431,7 +433,7 @@ def _flow_slide(slide, f: Flow):
         ln = line_owner.line._get_or_add_ln()
         etree.SubElement(ln, f"{{{_NS_A}}}tailEnd", type="triangle")
         if e["label"]:
-            lb = slide.shapes.add_textbox(e["label_x"] - Inches(0.2), e["label_y"], Inches(0.4), Inches(0.25))
+            lb = slide.shapes.add_textbox(e["label_x"] - Inches(0.17), e["label_y"], Inches(0.34), Inches(0.25))
             lb.text_frame.margin_left = lb.text_frame.margin_right = 0
             lb.text_frame.word_wrap = False
             _text(lb.text_frame, e["label"], Pt(9), True, T.NAVY, PP_ALIGN.CENTER)
