@@ -1,11 +1,12 @@
 # Proposal Studio
 
 Local app that turns a structured proposal (flows, Gantt, cost/CBA, assumptions) into an editable .pptx.
-No telemetry; projects are stored under `data/` and nothing is sent anywhere (no LLM layer yet).
+No telemetry; projects are stored under `data/`. Nothing leaves your machine except the optional, user-triggered LLM call
+(its exact payload is shown first). Use only synthetic data when testing against endpoints your organisation has not approved.
 
 ## Run
 ```bash
-python3 -m venv .venv && .venv/bin/pip install python-pptx pydantic pyyaml fastapi uvicorn httpx pytest
+python3 -m venv .venv && .venv/bin/pip install -r backend/requirements.txt pytest
 (cd frontend && npm install && npm run build)
 cd backend && ../.venv/bin/uvicorn studio.api:app --port 8000   # UI at http://127.0.0.1:8000
 ```
@@ -24,6 +25,21 @@ LLM_PROVIDER=openai OPENAI_BASE_URL=... OPENAI_API_KEY=... OPENAI_MODEL=...
 ```
 Flow: describe -> **preview exact payload (redaction applied, host shown)** -> send -> accept/reject suggestions.
 Use synthetic data when testing against non-approved endpoints.
+
+## Looks and templates
+Toolbar -> Template has two tabs. **Built-in looks**: Corporate, Forest, Slate, Plum, Monochrome (colours and font; all shapes stay
+native). **My templates**: upload, rename, download and delete your own corporate .pptx/.potx files.
+
+## Draft a deck from a brief (AI)
+Sidebar -> "Draft deck from brief": describe the process, review the exact payload, pick slides from the proposed outline,
+review each draft, then add them to the deck as one undoable step. Needs a configured LLM provider.
+
+## Tests
+```bash
+cd backend && ../.venv/bin/python -m pytest -q      # backend
+cd frontend && npm test                              # frontend (vitest)
+tools/render.sh out/sample.pptx /tmp/render          # optional visual check via LibreOffice
+```
 
 ## Corporate templates
 Toolbar -> Template -> Upload a `.pptx` or `.potx` (macro-enabled files are rejected). Exports use its slide master,
