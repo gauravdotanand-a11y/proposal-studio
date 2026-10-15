@@ -62,8 +62,10 @@ def library() -> dict:
 
 @app.post("/api/validate")
 def validate(body: dict) -> dict:
+    from .fit import expand
     p = _parse(body)
-    return {"ok": True, "slides": len(p.slides)}
+    _, notes = expand(p)
+    return {"ok": True, "slides": len(p.slides), "notes": [{"slide": n, "message": m} for n, m in notes]}
 
 
 @app.post("/api/gantt/weeks")

@@ -30,6 +30,7 @@ export interface TemplateRow {
 }
 
 export const api = {
+  fitNotes: (p: Proposal) => post("/api/validate", p).then(j<{ ok: boolean; notes: { slide: number; message: string }[] }>),
   presets: () => fetch("/api/presets").then(j<Preset[]>),
   templateDetails: () => fetch("/api/templates/details").then(j<TemplateRow[]>),
   renameTemplate: (n: string, to: string) =>

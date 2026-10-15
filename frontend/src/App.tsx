@@ -12,6 +12,7 @@ import NoteAdd from "@mui/icons-material/NoteAddOutlined";
 import Undo from "@mui/icons-material/UndoOutlined";
 import Redo from "@mui/icons-material/RedoOutlined";
 import AutoAwesome from "@mui/icons-material/AutoAwesomeOutlined";
+import WarnIcon from "@mui/icons-material/WarningAmberOutlined";
 import Add from "@mui/icons-material/Add";
 import Settings from "@mui/icons-material/TuneOutlined";
 import MenuIcon from "@mui/icons-material/MenuOutlined";
@@ -60,6 +61,7 @@ export default function App() {
   const [tplOpen, setTplOpen] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [draftOpen, setDraftOpen] = useState(false);
+  const [fitNotes, setFitNotes] = useState<{ slide: number; message: string }[]>([]);
   const [navOpen, setNavOpen] = useState(false);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
@@ -88,6 +90,12 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem(OPTS_KEY, JSON.stringify(opts)); } catch { /* storage unavailable */ }
   }, [opts]);
+  // Ask the backend how the deck will fit (shrunk text, split slides) so the editor can say so before export.
+  useEffect(() => {
+    if (!p) return;
+    const t = setTimeout(() => { api.fitNotes(clean(p)).then((r) => setFitNotes(r.notes)).catch(() => setFitNotes([])); }, 700);
+    return () => clearTimeout(t);
+  }, [p]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!p) return;
@@ -210,6 +218,10 @@ export default function App() {
                 <SlideThumb slide={s} meta={p.meta} />
                 <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mt: 0.5, color: "text.secondary" }}>
                   {ICON[s.type]}
+                  {fitNotes.some((n) => n.slide === i + 1) && (
+                    <Tooltip title={fitNotes.filter((n) => n.slide === i + 1).map((n) => n.message).join("; ")}>
+                      <WarnIcon fontSize="inherit" color="warning" aria-label="fit note" />
+                    </Tooltip>)}
                   <Typography variant="caption" noWrap sx={{ flex: 1, fontWeight: 600 }}>
                     {i + 1}. {LABEL[s.type]}{slideTitle(s) && s.type !== "title" ? ` · ${slideTitle(s)}` : ""}
                   </Typography>
@@ -307,6 +319,9 @@ export default function App() {
                 <IconButton aria-label="delete slide" onClick={() => { setP((cur) => cur && { ...cur, slides: cur.slides.filter((_, k) => k !== sel) }); setSel(-1); }}><Delete /></IconButton>
               </Stack>
             )}
+            {sel >= 0 && fitNotes.filter((n) => n.slide === sel + 1).map((n) => (
+              <Alert key={n.message} severity="info" sx={{ mb: 1.5 }}>On export: {n.message}.</Alert>
+            ))}
             {sel === -1 && (
               <Paper variant="outlined" sx={{ p: 2.5 }}>
                 <Typography variant="h6" sx={{ mb: 2 }}>Deck settings</Typography>

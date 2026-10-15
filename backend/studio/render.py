@@ -12,6 +12,7 @@ from pptx.util import Emu, Inches, Pt
 
 from . import templates as TPL
 from . import theme as T
+from .fit import expand, gantt_row_heights, gantt_rows, table_row_h, title_size, est_lines, text_h
 from .layout import layout_flow
 from .models import Assumptions, Cost, Flow, Gantt, Proposal, Slide
 
@@ -41,9 +42,15 @@ def _set_ph_text(shape, text):
 def _title(slide, text):
     if slide.shapes.title is not None:
         _set_ph_text(slide.shapes.title, text)
+        if len(text) > 55:  # placeholder size comes from the layout; step it down for long titles
+            for p in slide.shapes.title.text_frame.paragraphs:
+                for r in p.runs:
+                    r.font.size = Pt(24 if len(text) <= 85 else 20)
         return
-    tb = slide.shapes.add_textbox(T.MARGIN, Inches(0.35), T.SLIDE_W - 2 * T.MARGIN, Inches(0.8))
-    _text(tb.text_frame, text, T.TITLE_SIZE, True, T.NAVY)
+    width = T.SLIDE_W - 2 * T.MARGIN
+    size = title_size(text, width, base=T.TITLE_SIZE / 12700)
+    tb = slide.shapes.add_textbox(T.MARGIN, Inches(0.35), width, Inches(0.8))
+    _text(tb.text_frame, text, Pt(size), True, T.NAVY)
 
 
 def _template_footer(slide, layout, meta, number) -> bool:
@@ -83,24 +90,29 @@ def _title_slide(prs, slide, meta):
             if ph.placeholder_format.type == PP_PLACEHOLDER.SUBTITLE:
                 _set_ph_text(ph, meta.subtitle)
         return
-    tb = slide.shapes.add_textbox(T.MARGIN, Inches(2.6), T.SLIDE_W - 2 * T.MARGIN, Inches(1.2))
-    _text(tb.text_frame, meta.title, Pt(40), True, T.NAVY)
+    width = T.SLIDE_W - 2 * T.MARGIN
+    size = next((z for z in (40, 34, 30, 26, 22) if est_lines(meta.title, width, z, True) <= 3), 20)
+    h = text_h(est_lines(meta.title, width, size, True), size) + Inches(0.1)
+    top = Inches(2.6) if h <= Inches(1.3) else max(Inches(1.4), Inches(3.2) - h / 2)
+    tb = slide.shapes.add_textbox(T.MARGIN, int(top), width, int(h))
+    _text(tb.text_frame, meta.title, Pt(size), True, T.NAVY)
     if meta.subtitle:
-        tb = slide.shapes.add_textbox(T.MARGIN, Inches(3.9), T.SLIDE_W - 2 * T.MARGIN, Inches(0.8))
-        _text(tb.text_frame, meta.subtitle, Pt(20), False, T.GREY)
+        sub = next((z for z in (20, 18, 16, 14) if est_lines(meta.subtitle, width, z) <= 3), 14)
+        tb = slide.shapes.add_textbox(T.MARGIN, int(top + h + Inches(0.15)), width, Inches(0.8))
+        _text(tb.text_frame, meta.subtitle, Pt(sub), False, T.GREY)
 
 
-def _bullets_slide(slide, title, items, numbered=False):
+def _bullets_slide(slide, title, items, numbered=False, size=15, start=0):
     _title(slide, title)
     tb = slide.shapes.add_textbox(T.MARGIN, T.CONTENT_TOP, T.SLIDE_W - 2 * T.MARGIN, T.SLIDE_H - T.CONTENT_TOP - Inches(0.8))
     tf = tb.text_frame
     tf.word_wrap = True
     for i, item in enumerate(items):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-        p.text = f"{i + 1}. {item}" if numbered else f"• {item}"
+        p.text = f"{start + i + 1}. {item}" if numbered else f"• {item}"
         p.space_after = Pt(8)
         for r in p.runs:
-            r.font.size, r.font.color.rgb = Pt(15), T.GREY
+            r.font.size, r.font.color.rgb = Pt(size), T.GREY
             if T.FONT:
                 r.font.name = T.FONT
 
@@ -128,37 +140,40 @@ def _cell(cell, text, fill=None, bold=False, color=None, size=Pt(10), align=PP_A
 
 
 def _gantt_table(slide, g: Gantt, left, top, width, row_h=None, bar=None, changed=frozenset(), compact=False):
-    """Week grid as an editable table. Section headers become full-width bands."""
+    """Week grid as an editable table. Section headers become full-width bands.
+
+    Returns (graphic frame, total height in EMU); row heights follow the wrapped activity names.
+    """
     n = g.week_count
     name_w = Inches(2.9 if compact else 3.4)
-    rows: list[tuple[str, object]] = [("head1", None), ("head2", None)]
-    last_section = ""
-    for a in g.activities:
-        if a.section and a.section != last_section:
-            rows.append(("section", a.section))
-        last_section = a.section or last_section
-        rows.append(("act", a))
-    row_h = row_h or Inches(0.4)
-    gf = slide.shapes.add_table(len(rows), n + 1, left, top, width, int(row_h * len(rows)))
+    rows = [("head1", None), ("head2", None), *gantt_rows(g.activities)]
+    row_h = int(row_h or Inches(0.4))
+    body_h = gantt_row_heights(g.activities, row_h, compact)
+    heights = [row_h, row_h] + body_h
+    gf = slide.shapes.add_table(len(rows), n + 1, left, top, width, sum(heights))
     tbl = gf.table
     tbl.columns[0].width = name_w
     wk_w = int((width - name_w) / n)
     for c in range(1, n + 1):
         tbl.columns[c].width = wk_w
-    for r in range(len(rows)):
-        tbl.rows[r].height = int(row_h)
+    for r, h in enumerate(heights):
+        tbl.rows[r].height = int(h)
     f_head, f_dates, f_name = (Pt(9), Pt(6), Pt(9)) if compact else (Pt(10), Pt(7), Pt(10))
+    dense = wk_w < Inches(0.55)  # many weeks: short labels so headers do not wrap
+    if dense:
+        f_head, f_dates = Pt(7), Pt(5)
     bar = bar or T.ORANGE
     for r, (kind, payload) in enumerate(rows):
         if kind == "head1":
             _cell(tbl.cell(r, 0), "", T.NAVY)
             for w in range(1, n + 1):
-                _cell(tbl.cell(r, w), f"week {w}", T.NAVY, True, T.WHITE, f_head)
+                _cell(tbl.cell(r, w), f"W{w}" if dense else f"week {w}", T.NAVY, True, T.WHITE, f_head)
         elif kind == "head2":
             _cell(tbl.cell(r, 0), "Activities", T.NAVY, True, T.WHITE, f_head + Pt(1))
             for w in range(1, n + 1):
                 s_, e_ = g.week_range(w)
-                _cell(tbl.cell(r, w), f"{s_.day} {s_:%b} - {e_.day} {e_:%b}", T.TEAL, False, T.NAVY, f_dates)
+                label = f"{s_.day} {s_:%b}" if dense else f"{s_.day} {s_:%b} - {e_.day} {e_:%b}"
+                _cell(tbl.cell(r, w), label, T.TEAL, False, T.NAVY, f_dates)
         elif kind == "section":
             tbl.cell(r, 0).merge(tbl.cell(r, n))
             _cell(tbl.cell(r, 0), str(payload), T.TEAL_DARK, True, T.NAVY, f_name, PP_ALIGN.LEFT)
@@ -168,15 +183,12 @@ def _gantt_table(slide, g: Gantt, left, top, width, row_h=None, bar=None, change
             _cell(tbl.cell(r, 0), a.name, fill, a.name in changed, T.NAVY, f_name, PP_ALIGN.LEFT)
             for w in range(1, n + 1):
                 _cell(tbl.cell(r, w), "", bar if a.start_week <= w <= a.end_week else None)
-    return gf, len(rows)
+    return gf, sum(heights)
 
 
-def _gantt_slide(slide, g: Gantt):
+def _gantt_slide(slide, g: Gantt, row_h=None):
     _title(slide, g.title)
-    avail = T.SLIDE_H - Inches(1.3) - (T.CONTENT_TOP + Inches(0.1))
-    n_rows = 2 + len(g.activities) + len({a.section for a in g.activities if a.section})
-    row_h = min(Inches(0.4), int(avail / n_rows))
-    _gantt_table(slide, g, T.MARGIN, T.CONTENT_TOP + Inches(0.1), T.SLIDE_W - 2 * T.MARGIN, row_h=row_h)
+    _gantt_table(slide, g, T.MARGIN, T.CONTENT_TOP + Inches(0.1), T.SLIDE_W - 2 * T.MARGIN, row_h=row_h or Inches(0.4))
     if g.note:
         tb = slide.shapes.add_textbox(T.MARGIN, T.SLIDE_H - Inches(1.3), T.SLIDE_W - 2 * T.MARGIN, Inches(0.4))
         _text(tb.text_frame, g.note, Pt(11), True, T.NAVY)
@@ -188,18 +200,17 @@ def _compare_slide(slide, c):
     y = T.CONTENT_TOP - Inches(0.1)
     footer_h = Inches(0.55)
     avail = T.SLIDE_H - Inches(0.8) - y - footer_h - 2 * Inches(0.4)
-    total_rows = sum(2 + len(g.activities) + len({a.section for a in g.activities if a.section})
-                     for g in (c.previous, c.updated))
-    row_h = min(Inches(0.3), int(avail / total_rows))
+    total_rows = sum(2 + len(gantt_rows(g.activities)) for g in (c.previous, c.updated)) - 4
+    row_h = max(Inches(0.22), min(Inches(0.3), int(avail / max(1, total_rows + 4))))
     changed = frozenset(c.changed)
     for label, g, bar, hi in ((c.previous_label, c.previous, T.TEAL_DARK, frozenset()),
                               (c.updated_label, c.updated, T.ORANGE, changed)):
         tb = slide.shapes.add_textbox(T.MARGIN, y, width, Inches(0.35))
         _text(tb.text_frame, label, Pt(15), True, T.NAVY)
         y += Inches(0.38)
-        gf, n = _gantt_table(slide, g, T.MARGIN, y, width, row_h=row_h, bar=bar, changed=hi, compact=True)
+        gf, h = _gantt_table(slide, g, T.MARGIN, y, width, row_h=row_h, bar=bar, changed=hi, compact=True)
         gf.name = f"gantt:{label}"
-        y += n * row_h + Inches(0.1)
+        y += h + Inches(0.1)
     d = c.delta_weeks
     summary = (f"Duration {'+' if d > 0 else ''}{d} week(s) vs previous; " if d else "Same duration as previous; ")
     summary += f"{len(changed)} activit{'y' if len(changed) == 1 else 'ies'} changed (highlighted)."
@@ -208,7 +219,7 @@ def _compare_slide(slide, c):
 
 
 # --------------------------------------------------------- scope / lists
-def _scope_slide(slide, sc):
+def _scope_slide(slide, sc, size=13):
     _title(slide, sc.title)
     col_gap = Inches(0.4)
     width = T.SLIDE_W - 2 * T.MARGIN
@@ -234,7 +245,7 @@ def _scope_slide(slide, sc):
             p.text = f"\u2022 {it}"
             p.space_after = Pt(6)
             for r in p.runs:
-                r.font.size, r.font.color.rgb = Pt(13), T.GREY
+                r.font.size, r.font.color.rgb = Pt(size), T.GREY
                 if T.FONT:
                     r.font.name = T.FONT
     if sc.note:
@@ -245,10 +256,14 @@ def _scope_slide(slide, sc):
 def _simple_table(slide, headers, rows, widths, fills=None):
     width = T.SLIDE_W - 2 * T.MARGIN
     total = sum(widths)
-    gf = slide.shapes.add_table(len(rows) + 1, len(headers), T.MARGIN, T.CONTENT_TOP, width, Inches(0.45) * (len(rows) + 1))
+    cols = [width * w / total for w in widths]
+    heights = [Inches(0.45)] + [table_row_h([(str(t), cols[c], 11, False) for c, t in enumerate(r)], Inches(0.32)) for r in rows]
+    gf = slide.shapes.add_table(len(rows) + 1, len(headers), T.MARGIN, T.CONTENT_TOP, width, sum(heights))
     tbl = gf.table
-    for i, w in enumerate(widths):
-        tbl.columns[i].width = int(width * w / total)
+    for i, w in enumerate(cols):
+        tbl.columns[i].width = int(w)
+    for r, h in enumerate(heights):
+        tbl.rows[r].height = int(h)
     for i, h in enumerate(headers):
         _cell(tbl.cell(0, i), h, T.NAVY, True, T.WHITE, Pt(12), PP_ALIGN.LEFT)
     for r, row in enumerate(rows, start=1):
@@ -269,10 +284,10 @@ def _risks_slide(slide, rk):
     gf.name = "risks-table"
 
 
-def _next_steps_slide(slide, ns):
+def _next_steps_slide(slide, ns, start=0):
     _title(slide, ns.title)
     gf = _simple_table(slide, ["#", "Action", "Owner", "Due"],
-                       [[str(i), s.action, s.owner, s.due] for i, s in enumerate(ns.items, start=1)], [0.5, 7, 2.2, 1.8])
+                       [[str(i), s.action, s.owner, s.due] for i, s in enumerate(ns.items, start=start + 1)], [0.5, 7, 2.2, 1.8])
     gf.name = "next-steps-table"
 
 
@@ -280,31 +295,47 @@ def _money(cur, v):
     return f"{cur}{v:,.2f}".rstrip("0").rstrip(".") if v else "-"
 
 
-def _cost_slide(slide, c: Cost):
+def _cost_slide(slide, c: Cost, row_h=None, lines=None, final=True):
+    """Cost table, then (on the final part) CBA, benefits and driver basis.
+
+    `lines` selects which cost lines this part shows; totals always cover every line.
+    """
     _title(slide, c.title)
     cols = len(c.years) + 2
     width = T.SLIDE_W - 2 * T.MARGIN
-    rows = len(c.lines) + 2
-    tbl = slide.shapes.add_table(rows, cols, T.MARGIN, T.CONTENT_TOP, width, Inches(0.45) * rows).table
-    tbl.columns[0].width = Inches(3.2)
-    other = int((width - Inches(3.2)) / (cols - 1))
+    row_h = int(row_h or Inches(0.3))
+    show = [c.lines[i] for i in lines] if lines is not None else c.lines
+    name_w = Inches(3.2)
+    heights = [Inches(0.45)] + [table_row_h([(ln.head, name_w, 11, False)], row_h) for ln in show]
+    if final:
+        heights.append(Inches(0.45))
+    rows = len(heights)
+    gf = slide.shapes.add_table(rows, cols, T.MARGIN, T.CONTENT_TOP, width, sum(heights))
+    gf.name = "cost-table"
+    tbl = gf.table
+    tbl.columns[0].width = name_w
+    other = int((width - name_w) / (cols - 1))
     for i in range(1, cols):
         tbl.columns[i].width = other
+    for r, h in enumerate(heights):
+        tbl.rows[r].height = int(h)
     heads = ["Cost Head", *c.years, "Total"]
     for i, h in enumerate(heads):
         _cell(tbl.cell(0, i), h, T.NAVY, True, T.WHITE, Pt(12))
-    for r, line in enumerate(c.lines, start=1):
+    for r, line in enumerate(show, start=1):
         _cell(tbl.cell(r, 0), line.head, None, False, T.GREY, Pt(11), PP_ALIGN.LEFT)
         for i, v in enumerate(line.values, start=1):
             _cell(tbl.cell(r, i), _money(c.currency, v), None, False, T.GREY, Pt(11))
         _cell(tbl.cell(r, cols - 1), _money(c.currency, sum(line.values)), None, True, T.GREY, Pt(11))
+    if not final:
+        return
     last = rows - 1
     _cell(tbl.cell(last, 0), "Total", T.ORANGE, True, T.WHITE, Pt(12), PP_ALIGN.LEFT)
     for i, v in enumerate(c.year_totals, start=1):
         _cell(tbl.cell(last, i), _money(c.currency, v), T.ORANGE, True, T.WHITE, Pt(12))
     _cell(tbl.cell(last, cols - 1), _money(c.currency, c.total_cost), T.ORANGE, True, T.WHITE, Pt(12))
 
-    y = T.CONTENT_TOP + Inches(0.45) * rows + Inches(0.3)
+    y = T.CONTENT_TOP + sum(heights) + Inches(0.3)
     badge = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, T.MARGIN, y, Inches(4), Inches(0.5))
     badge.fill.background()
     badge.line.color.rgb = T.NAVY
@@ -317,7 +348,7 @@ def _cost_slide(slide, c: Cost):
                                f"Recurring (all years): {_money(c.currency, c.recurring_total)}",
               Pt(11), True, T.NAVY, PP_ALIGN.LEFT)
     brow = slide.shapes.add_table(2, cols, T.MARGIN, y + Inches(0.8), width, Inches(0.8)).table
-    brow.columns[0].width = Inches(3.2)
+    brow.columns[0].width = name_w
     for i in range(1, cols):
         brow.columns[i].width = other
     for i, h in enumerate(["Benefits", *c.years, "Total"]):
@@ -627,7 +658,13 @@ def render(proposal: Proposal, out: str | Path, template: str | Path | None = No
         t_idx = c_idx = None
 
     with T.override(**overrides):
-        for i, s in enumerate(proposal.slides, start=1):
+        pieces, fit_notes = expand(proposal)
+        for num, msg in fit_notes:
+            title = next((getattr(proposal.slides[num - 1], k) for k in ("title",) if getattr(proposal.slides[num - 1], k, None)), "")
+            warnings.append(f"Slide {num}{f' ({title})' if title else ''}: {msg}.")
+        for i, piece in enumerate(pieces, start=1):
+            s = piece.slide
+            o = piece.opts
             if template:
                 layout = prs.slide_layouts[t_idx if s.type == "title" else c_idx]
             else:
@@ -637,13 +674,13 @@ def render(proposal: Proposal, out: str | Path, template: str | Path | None = No
                 _title_slide(prs, slide, proposal.meta)
             elif s.type == "assumptions":
                 a: Assumptions = s.assumptions
-                _bullets_slide(slide, a.title, a.items, a.numbered)
+                _bullets_slide(slide, a.title, a.items, a.numbered, o.get("size", 15), o.get("start", 0))
             elif s.type == "bullets":
-                _bullets_slide(slide, s.title, s.bullets)
+                _bullets_slide(slide, s.title, s.bullets, False, o.get("size", 15), o.get("start", 0))
             elif s.type == "gantt":
-                _gantt_slide(slide, s.gantt)
+                _gantt_slide(slide, s.gantt, o.get("row_h"))
             elif s.type == "cost":
-                _cost_slide(slide, s.cost)
+                _cost_slide(slide, s.cost, o.get("row_h"), o.get("lines"), o.get("final", True))
             elif s.type == "flow":
                 _flow_slide(slide, s.flow)
             elif s.type == "solution":
@@ -651,11 +688,11 @@ def render(proposal: Proposal, out: str | Path, template: str | Path | None = No
             elif s.type == "compare":
                 _compare_slide(slide, s.compare)
             elif s.type == "scope":
-                _scope_slide(slide, s.scope)
+                _scope_slide(slide, s.scope, o.get("size", 13))
             elif s.type == "risks":
                 _risks_slide(slide, s.risks)
             elif s.type == "next_steps":
-                _next_steps_slide(slide, s.next_steps)
+                _next_steps_slide(slide, s.next_steps, o.get("start", 0))
             if template:
                 _drop_empty_placeholders(slide)
                 if s.type != "title":

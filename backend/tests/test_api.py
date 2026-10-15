@@ -45,3 +45,13 @@ def test_flow_layout_matches_export(tmp_path):
         assert (n["x"], n["y"], n["w"], n["h"]) in boxes
     bad = client.post("/api/flow/layout", json={"title": "t", "nodes": [], "edges": [{"src": "a", "dst": "b", "label": ""}]})
     assert bad.status_code == 422
+
+
+def test_validate_reports_fit_notes():
+    from fastapi.testclient import TestClient
+    from studio.api import app
+    long = "Extremely long label text that keeps going to test wrapping inside boxes " * 2
+    body = {"meta": {"title": "T"}, "slides": [{"type": "assumptions", "assumptions": {
+        "title": "A", "items": [long + str(i) for i in range(14)], "numbered": True}}]}
+    r = TestClient(app).post("/api/validate", json=body).json()
+    assert r["ok"] and r["notes"] and r["notes"][0]["slide"] == 1
