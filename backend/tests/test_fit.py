@@ -69,3 +69,50 @@ def test_gantt_chunks_respect_wrapped_row_heights():
         row_h = p.opts["row_h"]
         total = sum(fit.gantt_row_heights(p.slide.gantt.activities, row_h)) + row_h * 2
         assert total <= (7.5 - 1.3 - 1.4) * 914400 + 1
+
+
+def _chain(n, lanes=None):
+    nodes = [{"id": f"n{i}", "label": f"Step {i}", "kind": "process", **({"lane": lanes[i % len(lanes)]} if lanes else {})}
+             for i in range(n)]
+    edges = [{"src": f"n{i}", "dst": f"n{i + 1}", "label": ""} for i in range(n - 1)]
+    return {"title": "Process", "nodes": nodes, "edges": edges, "notes": ["* note"]}
+
+
+def test_small_flow_is_untouched():
+    pieces, notes = fit.expand(_deck([{"type": "flow", "flow": _chain(8)}]))
+    assert len(pieces) == 1 and notes == []
+
+
+def test_dense_flow_is_split_into_linked_parts():
+    pieces, notes = fit.expand(_deck([{"type": "flow", "flow": _chain(26)}]))
+    assert len(pieces) >= 3 and notes
+    real = [n.id for p in pieces for n in p.slide.flow.nodes if not n.id.startswith("cont_")]
+    assert sorted(real) == sorted(f"n{i}" for i in range(26))  # every step appears exactly once
+    for k, p in enumerate(pieces):
+        f = p.slide.flow
+        assert len([n for n in f.nodes if not n.id.startswith("cont_")]) <= 14
+        assert f.title.endswith(f"(part {k + 1} of {len(pieces)})")
+        if k < len(pieces) - 1:
+            assert any(n.id.startswith("cont_out_") for n in f.nodes)
+        if k > 0:
+            assert any(n.id.startswith("cont_in_") for n in f.nodes)
+    assert pieces[-1].slide.flow.notes == ["* note"] and pieces[0].slide.flow.notes == []
+
+
+def test_swimlane_flow_with_many_columns_is_split_and_keeps_lanes():
+    pieces, _ = fit.expand(_deck([{"type": "flow", "flow": {**_chain(12, ["Bot", "Analyst"]), "lanes": ["Bot", "Analyst"]}}]))
+    assert len(pieces) >= 2
+    for p in pieces:
+        assert all(n.lane for n in p.slide.flow.nodes)
+
+
+def test_branching_flow_edges_across_cut_are_all_represented():
+    n = 20
+    f = _chain(n)
+    f["edges"].append({"src": "n2", "dst": "n15", "label": "Skip"})
+    pieces, _ = fit.expand(_deck([{"type": "flow", "flow": f}]))
+    outs = [e for p in pieces for e in p.slide.flow.edges if e.dst.startswith("cont_out_")]
+    assert any(e.label == "Skip" for e in outs)
+    from studio.models import Flow  # every part must still validate
+    for p in pieces:
+        Flow.model_validate(p.slide.flow.model_dump())

@@ -11,7 +11,8 @@ from dataclasses import dataclass, field
 from pptx.util import Inches
 
 from . import theme as T
-from .models import Proposal, Slide
+from .layout import layers
+from .models import Flow, FlowEdge, FlowNode, Proposal, Slide
 
 PT = 12700
 MIN_GANTT_ROW = Inches(0.26)
@@ -148,6 +149,72 @@ def plan_gantt(acts, avail: int):
     return chunks, row_h
 
 
+# ------------------------------------------------------------------- flow
+MAX_FLOW_NODES = 14
+PART_NODES = 11
+LANE_LAYERS = 8
+
+
+def split_flow(f: Flow) -> list[Flow]:
+    """Split a dense flow into linked parts at layer boundaries.
+
+    Each cut gets an end shape ("Continues: <step>") in the earlier part and a start shape
+    ("From previous slide") in the next, so the reader can follow the process across slides.
+    Returns [f] when no split is needed.
+    """
+    lanes_mode = bool([x for x in f.lanes if x.strip()] or any(n.lane for n in f.nodes))
+    layer = layers(f)
+    n_layers = max(layer.values(), default=0) + 1
+    if len(f.nodes) <= MAX_FLOW_NODES and not (lanes_mode and n_layers > LANE_LAYERS + 1):
+        return [f]
+    by_layer: dict[int, list[FlowNode]] = {}
+    for n in f.nodes:
+        by_layer.setdefault(layer[n.id], []).append(n)
+    parts_n = max(math.ceil(len(f.nodes) / PART_NODES), math.ceil(n_layers / LANE_LAYERS) if lanes_mode else 1, 2)
+    target = len(f.nodes) / parts_n
+    groups: list[list[int]] = [[]]
+    count = 0
+    for li in sorted(by_layer):
+        size = len(by_layer[li])
+        if groups[-1] and (count + size > PART_NODES or (count >= target and len(groups) < parts_n)
+                           or (lanes_mode and len(groups[-1]) >= LANE_LAYERS)):
+            groups.append([])
+            count = 0
+        groups[-1].append(li)
+        count += size
+    if len(groups) < 2:
+        return [f]
+    part_of = {n.id: gi for gi, g in enumerate(groups) for li in g for n in by_layer[li]}
+    nodes_by_id = {n.id: n for n in f.nodes}
+    total = len(groups)
+    out: list[Flow] = []
+    for gi in range(total):
+        nodes = [n.model_copy() for n in f.nodes if part_of[n.id] == gi]
+        edges: list[FlowEdge] = []
+        extra_in: dict[str, str] = {}
+        for e in f.edges:
+            a, b = part_of[e.src], part_of[e.dst]
+            if a == gi and b == gi:
+                edges.append(e.model_copy())
+            elif a == gi:  # leaves this part
+                oid = f"cont_out_{e.src}_{e.dst}"
+                lbl = f"To part {b + 1}"
+                nodes.append(FlowNode(id=oid, label=lbl, kind="end", lane=nodes_by_id[e.src].lane))
+                edges.append(FlowEdge(src=e.src, dst=oid, label=e.label, note=e.note))
+            elif b == gi:  # arrives from an earlier/later part
+                if e.dst not in extra_in:
+                    iid = f"cont_in_{e.dst}"
+                    extra_in[e.dst] = iid
+                    src_part = a + 1
+                    nodes.append(FlowNode(id=iid, label=f"From part {src_part}", kind="start", lane=nodes_by_id[e.dst].lane))
+                    edges.append(FlowEdge(src=iid, dst=e.dst))
+        title = f"{f.title} (part {gi + 1} of {total})"
+        used = {n.lane for n in nodes if n.lane}
+        out.append(Flow(title=title, nodes=nodes, edges=edges, notes=f.notes if gi == total - 1 else [],
+                        lanes=[x for x in f.lanes if x in used] if f.lanes else []))
+    return out
+
+
 # ------------------------------------------------------------------- main
 def expand(proposal: Proposal) -> tuple[list[Piece], list[tuple[int, str]]]:
     """Turn the deck into renderable pieces and collect (slide number, message) fit notes."""
@@ -277,10 +344,14 @@ def expand(proposal: Proposal) -> tuple[list[Piece], list[tuple[int, str]]]:
                 notes.append((n, "too many activities for one comparison slide; rows are tight, consider fewer activities"))
             pieces.append(Piece(s, n))
         elif s.type == "flow":
-            f = s.flow
-            if len(f.nodes) > 14:
-                notes.append((n, f"{len(f.nodes)} steps: diagrams above 14 steps get small; consider splitting the flow"))
-            pieces.append(Piece(s, n))
+            parts = split_flow(s.flow)
+            if len(parts) > 1:
+                notes.append((n, f"{len(s.flow.nodes)} steps are too many for one diagram: split into {len(parts)} linked slides"))
+            for p, part in enumerate(parts):
+                c = s.model_copy(deep=True) if len(parts) > 1 else s
+                if len(parts) > 1:
+                    c.flow = part
+                pieces.append(Piece(c, n, p, len(parts)))
         else:
             pieces.append(Piece(s, n))
     return pieces, notes
