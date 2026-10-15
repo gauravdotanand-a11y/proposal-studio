@@ -41,7 +41,7 @@ def redact(text: str, extra_terms: list[str] | None = None) -> str:
 
 
 # ------------------------------------------------------------------ tasks
-Task = Literal["assumptions", "flow", "bullets", "tobe", "summary", "risks", "scope", "benefits"]
+Task = Literal["assumptions", "flow", "bullets", "tobe", "summary", "risks", "scope", "benefits", "outline"]
 
 
 class LLMValidationError(LLMError):
@@ -59,6 +59,8 @@ _KIND_GUIDE = (
     'exactly two outgoing edges labelled "Yes" and "No"; "bot" is a step done by the RPA bot; "human" is a manual step '
     'by an analyst/agent; "data" is a database, storage or queue; "ai" is an OCR, ML, NLP or GenAI step.'
 )
+
+OUTLINE_KINDS = ("summary", "asis", "tobe", "assumptions", "scope", "risks", "benefits", "gantt", "next_steps")
 
 _TASK_PROMPTS: dict[str, str] = {
     "assumptions": (
@@ -94,6 +96,14 @@ _TASK_PROMPTS: dict[str, str] = {
         'Write a proposal-style summary as slide bullets: {"title": "...", "bullets": ["..."]} with 4-7 bullets. '
         "State what is proposed and the benefit; do not just repeat the input line by line."
     ),
+    "outline": (
+        'Plan a solution proposal deck from the brief as {"title": "...", "subtitle": "...", "slides": '
+        '[{"kind": "...", "title": "..."}]}. Allowed kinds: ' + ", ".join(OUTLINE_KINDS) + ". "
+        "summary = executive summary; asis = current manual process flow; tobe = automated flow in swimlanes; "
+        "assumptions; scope; risks; benefits = benefit drivers and cost/CBA; gantt = execution plan; "
+        "next_steps. Choose 5-10 slides in a sensible order, each kind at most once, with a short specific title. "
+        "Include only slides the brief gives enough material for."
+    ),
     "summary": (
         'Write an executive summary for the proposal as {"title": "Executive summary", "bullets": ["..."]} with 3-5 '
         "bullets: the problem, the proposed automation, the expected outcome and the key dependency. Use only facts "
@@ -127,6 +137,17 @@ class AssumptionsOut(BaseModel):
 class BulletsOut(BaseModel):
     title: str = ""
     bullets: list[str]
+
+
+class OutlineSlide(BaseModel):
+    kind: str
+    title: str = ""
+
+
+class OutlineOut(BaseModel):
+    title: str = ""
+    subtitle: str = ""
+    slides: list[OutlineSlide]
 
 
 class RiskOut(BaseModel):
@@ -189,6 +210,8 @@ def parse_output(task: str, raw: str) -> dict:
         if task == "assumptions":
             out = AssumptionsOut.model_validate(data)
             return {"items": [i.strip() for i in out.items if i.strip()]}
+        if task == "outline":
+            return OutlineOut.model_validate(data).model_dump()
         if task == "risks":
             return RisksOut.model_validate(data).model_dump()
         if task == "scope":
@@ -349,6 +372,22 @@ def finalize(task: str, data: dict, source_text: str = "", existing: list[str] |
         if len(items) < 3:
             raise LLMValidationError("fewer than 3 usable, non-duplicate assumptions; write more specific ones")
         return {"items": items}, ([f"Removed {dropped} duplicate, too-short or surplus item(s)."] if dropped else [])
+    if task == "outline":
+        seen, slides, warns = set(), [], []
+        for sl in data["slides"]:
+            kind = sl["kind"].strip().lower().replace("-", "_").replace(" ", "_")
+            kind = {"as_is": "asis", "to_be": "tobe", "executive_summary": "summary", "plan": "gantt",
+                    "cost": "benefits", "assumption": "assumptions", "risk": "risks"}.get(kind, kind)
+            if kind not in OUTLINE_KINDS:
+                warns.append(f'Dropped unknown slide kind "{sl["kind"]}".')
+            elif kind in seen:
+                warns.append(f'Dropped a second "{kind}" slide.')
+            else:
+                seen.add(kind)
+                slides.append({"kind": kind, "title": sl["title"].strip()})
+        if len(slides) < 2:
+            raise LLMValidationError("the outline needs at least 2 known slide kinds")
+        return {"title": data["title"].strip(), "subtitle": data["subtitle"].strip(), "slides": slides[:10]}, warns
     if task == "risks":
         seen, items, dropped = [], [], 0
         for r in data["items"]:

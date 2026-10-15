@@ -46,3 +46,19 @@ def test_rubric_flags_bad_flow():
     case = next(c for c in evalset.CASES if c["task"] == "flow")
     bad = {"nodes": [{"id": "a", "label": "x", "kind": "process"}], "edges": [], "lanes": []}
     assert evalset.check(case, bad, [])
+
+
+def test_outline_filters_unknown_and_duplicate_kinds():
+    prov = Fake({"title": "Invoice automation", "subtitle": "Proposal", "slides": [
+        {"kind": "Summary", "title": "Executive summary"}, {"kind": "as-is", "title": "x"},
+        {"kind": "asis", "title": "Current process"}, {"kind": "asis", "title": "again"},
+        {"kind": "risks", "title": "Risks"}]})
+    res, warns = llm.run_task(prov, "outline", "brief")
+    assert [s["kind"] for s in res["slides"]] == ["summary", "asis", "risks"]
+    assert len(warns) == 2
+
+
+def test_outline_needs_two_slides():
+    import pytest
+    with pytest.raises(llm.LLMValidationError):
+        llm.finalize("outline", {"title": "", "subtitle": "", "slides": [{"kind": "nope", "title": ""}]})

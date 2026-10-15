@@ -11,6 +11,7 @@ import FolderOpen from "@mui/icons-material/FolderOpenOutlined";
 import NoteAdd from "@mui/icons-material/NoteAddOutlined";
 import Undo from "@mui/icons-material/UndoOutlined";
 import Redo from "@mui/icons-material/RedoOutlined";
+import AutoAwesome from "@mui/icons-material/AutoAwesomeOutlined";
 import Add from "@mui/icons-material/Add";
 import Settings from "@mui/icons-material/TuneOutlined";
 import MenuIcon from "@mui/icons-material/MenuOutlined";
@@ -26,6 +27,7 @@ import { CompareEditor, NextStepsEditor, RisksEditor, ScopeEditor } from "./More
 import { AssumptionsEditor, BulletsEditor, CostEditor, FlowEditor, GanttEditor } from "./editors";
 import { SlideThumb } from "./SlideThumb";
 import { Wizard } from "./Wizard";
+import { DeckDraft } from "./DeckDraft";
 import { newSlide, slideTitle } from "./factory";
 import { ICON, LABEL } from "./slideMeta";
 import { useUndoable } from "./useUndoable";
@@ -57,6 +59,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [tplOpen, setTplOpen] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [draftOpen, setDraftOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
@@ -231,6 +234,7 @@ export default function App() {
       </Stack>
       <Box sx={{ p: 1.5, position: "sticky", bottom: 0, bgcolor: "background.paper" }}>
         <Button fullWidth startIcon={<Add />} variant="outlined" onClick={(e) => setAddEl(e.currentTarget)}>Add slide</Button>
+        <Button fullWidth startIcon={<AutoAwesome />} sx={{ mt: 0.75 }} onClick={() => setDraftOpen(true)}>Draft deck from brief</Button>
       </Box>
     </>
   );
@@ -353,6 +357,12 @@ export default function App() {
         ))}
       </Menu>
       <TemplateDialog open={tplOpen} onClose={() => setTplOpen(false)} opts={opts} onChange={setOpts} />
+      <DeckDraft open={draftOpen} onClose={() => setDraftOpen(false)}
+        onApply={(slides, meta) => {
+          setP((cur) => (cur ? { ...cur, meta: meta ? { ...cur.meta, ...meta } : cur.meta, slides: [...cur.slides, ...slides] } : cur));
+          setSel(p.slides.length);
+          setToast({ msg: `Added ${slides.length} drafted slide(s). Undo removes them.`, sev: "success" });
+        }} />
       <Wizard open={wizardOpen} onClose={() => setWizardOpen(false)}
         onCreate={(np) => { setP(np); setSel(-1); setWizardOpen(false); setToast({ msg: "New proposal created. Undo restores the previous deck.", sev: "success" }); }} />
       <Snackbar open={!!toast} autoHideDuration={4000} onClose={() => setToast(null)}>
