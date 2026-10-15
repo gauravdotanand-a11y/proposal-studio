@@ -125,7 +125,9 @@ _TASK_PROMPTS: dict[str, str] = {
     "benefits": (
         'Propose benefit drivers as {"drivers": [{"name": "...", "annual_volume": 0, "minutes_saved": 0, '
         '"hourly_rate": 0, "success_rate": 0}]} with 1-4 drivers (success_rate between 0 and 1). Fill a number ONLY '
-        "when the input states it; otherwise use 0 so the user can enter it. Never estimate volumes, times or rates."
+        "when the input states it; otherwise use 0 so the user can enter it. annual_volume is per year: convert a stated "
+        "monthly figure x12, weekly x52, daily x250. minutes_saved is per item; hourly_rate is a money rate per hour. "
+        "Never estimate volumes, times or rates that the input does not give."
     ),
 }
 

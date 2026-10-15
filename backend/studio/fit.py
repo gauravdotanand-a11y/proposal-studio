@@ -170,7 +170,7 @@ def split_flow(f: Flow) -> list[Flow]:
     lanes_mode = bool([x for x in f.lanes if x.strip()] or any(n.lane for n in f.nodes))
     layer = layers(f)
     n_layers = max(layer.values(), default=0) + 1
-    if len(f.nodes) <= MAX_FLOW_NODES and not (lanes_mode and n_layers > LANE_LAYERS + 1):
+    if len(f.nodes) <= MAX_FLOW_NODES and not (lanes_mode and n_layers > LANE_LAYERS + 2):
         return [f]
     by_layer: dict[int, list[FlowNode]] = {}
     for n in f.nodes:
@@ -196,23 +196,25 @@ def split_flow(f: Flow) -> list[Flow]:
     for gi in range(total):
         nodes = [n.model_copy() for n in f.nodes if part_of[n.id] == gi]
         edges: list[FlowEdge] = []
-        extra_in: dict[str, str] = {}
+        out_ids: dict[int, str] = {}   # one "To part N" shape per target part
+        in_ids: dict[int, str] = {}    # one "From part N" shape per source part
+        seen_in: set[tuple[int, str]] = set()
         for e in f.edges:
             a, b = part_of[e.src], part_of[e.dst]
             if a == gi and b == gi:
                 edges.append(e.model_copy())
             elif a == gi:  # leaves this part
-                oid = f"cont_out_{e.src}_{e.dst}"
-                lbl = f"To part {b + 1}"
-                nodes.append(FlowNode(id=oid, label=lbl, kind="end", lane=nodes_by_id[e.src].lane))
-                edges.append(FlowEdge(src=e.src, dst=oid, label=e.label, note=e.note))
-            elif b == gi:  # arrives from an earlier/later part
-                if e.dst not in extra_in:
-                    iid = f"cont_in_{e.dst}"
-                    extra_in[e.dst] = iid
-                    src_part = a + 1
-                    nodes.append(FlowNode(id=iid, label=f"From part {src_part}", kind="start", lane=nodes_by_id[e.dst].lane))
-                    edges.append(FlowEdge(src=iid, dst=e.dst))
+                if b not in out_ids:
+                    out_ids[b] = f"cont_out_{b + 1}"
+                    nodes.append(FlowNode(id=out_ids[b], label=f"To part {b + 1}", kind="end", lane=nodes_by_id[e.src].lane))
+                edges.append(FlowEdge(src=e.src, dst=out_ids[b], label=e.label, note=e.note))
+            elif b == gi:  # arrives from another part
+                if a not in in_ids:
+                    in_ids[a] = f"cont_in_{a + 1}"
+                    nodes.append(FlowNode(id=in_ids[a], label=f"From part {a + 1}", kind="start", lane=nodes_by_id[e.dst].lane))
+                if (a, e.dst) not in seen_in:
+                    seen_in.add((a, e.dst))
+                    edges.append(FlowEdge(src=in_ids[a], dst=e.dst))
         title = f"{f.title} (part {gi + 1} of {total})"
         used = {n.lane for n in nodes if n.lane}
         out.append(Flow(title=title, nodes=nodes, edges=edges, notes=f.notes if gi == total - 1 else [],

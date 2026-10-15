@@ -116,3 +116,15 @@ def test_branching_flow_edges_across_cut_are_all_represented():
     from studio.models import Flow  # every part must still validate
     for p in pieces:
         Flow.model_validate(p.slide.flow.model_dump())
+
+
+def test_continuation_shapes_are_merged_per_target_part():
+    f = _chain(20)
+    f["edges"] += [{"src": "n3", "dst": "n14", "label": ""}, {"src": "n4", "dst": "n15", "label": ""}]
+    pieces, _ = fit.expand(_deck([{"type": "flow", "flow": f}]))
+    for p in pieces:
+        ids = [n.id for n in p.slide.flow.nodes]
+        outs = [i for i in ids if i.startswith("cont_out_")]
+        ins = [i for i in ids if i.startswith("cont_in_")]
+        assert len(outs) == len(set(outs)) and len(ins) == len(set(ins))
+    assert sum(1 for p in pieces[0].slide.flow.nodes if p.id.startswith("cont_out_")) <= len(pieces) - 1
