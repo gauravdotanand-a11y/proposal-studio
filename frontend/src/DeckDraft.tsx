@@ -109,23 +109,30 @@ export function DeckDraft({ open, onClose, onApply }: Props) {
     const chosen = outline.slides.filter((_, i) => picked[i]);
     setBusy(true); setErr(""); setProgress({ done: 0, total: chosen.length });
     const ctx = [`Proposal: ${outline.title}`, `Slides: ${chosen.map((c) => c.title || OUTLINE_LABEL[c.kind]).join(", ")}`].join("\n");
-    const out: Draft[] = [];
-    for (const c of chosen) {
+    let done = 0;
+    const tick = () => setProgress({ done: ++done, total: chosen.length });
+    const draft = async (c: OutlineSlide, asis?: Draft): Promise<Draft> => {
       const task = TASK_OF[c.kind];
-      if (!task) { out.push({ kind: c.kind, slide: skeleton(c.kind, c.title), note: "Template slide: fill in manually.", failed: false }); }
-      else {
-        const asis = out.find((d) => d.kind === "asis");
-        const text = c.kind === "tobe" && asis ? `${brief}\n\nAS-IS process steps:\n${flowText(asis.slide)}` : brief;
-        try {
-          const r = await api.llmRun(req(task, text, ctx));
-          const slide = slideFromResult(c.kind, c.title, r.result);
-          out.push({ kind: c.kind, slide: slide ?? skeleton(c.kind, c.title), note: (r.warnings ?? []).join(" "), failed: false });
-        } catch (e) {
-          out.push({ kind: c.kind, slide: skeleton(c.kind, c.title), note: `Draft failed (${String(e).slice(0, 120)}); an empty slide is offered instead.`, failed: true });
-        }
+      if (!task) return { kind: c.kind, slide: skeleton(c.kind, c.title), note: "Template slide: fill in manually.", failed: false };
+      const text = c.kind === "tobe" && asis ? `${brief}\n\nAS-IS process steps:\n${flowText(asis.slide)}` : brief;
+      try {
+        const r = await api.llmRun(req(task, text, ctx));
+        const slide = slideFromResult(c.kind, c.title, r.result);
+        return { kind: c.kind, slide: slide ?? skeleton(c.kind, c.title), note: (r.warnings ?? []).join(" "), failed: false };
+      } catch (e) {
+        return { kind: c.kind, slide: skeleton(c.kind, c.title), note: `Draft failed (${String(e).slice(0, 120)}); an empty slide is offered instead.`, failed: true };
       }
-      setProgress({ done: out.length, total: chosen.length });
-    }
+    };
+    // Independent slides run in parallel; the To-Be flow waits for the As-Is so it can build on it.
+    const results = new Map<string, Draft>();
+    const asisItem = chosen.find((c) => c.kind === "asis");
+    const asisP = asisItem ? draft(asisItem).then((d) => { tick(); return d; }) : Promise.resolve(undefined);
+    await Promise.all(chosen.map(async (c) => {
+      const d = c.kind === "asis" ? await asisP : c.kind === "tobe" ? await draft(c, await asisP) : await draft(c);
+      if (c.kind !== "asis") tick();
+      if (d) results.set(c.kind, d);
+    }));
+    const out: Draft[] = chosen.map((c) => results.get(c.kind)!).filter(Boolean);
     setDrafts(out); setKeep(out.map(() => true)); setBusy(false); setStep(3);
   };
   const apply = () => {

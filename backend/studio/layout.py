@@ -245,6 +245,24 @@ def _overlap(a: tuple[float, float, float, float], b: tuple[float, float, float,
     return a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
 
 
+def _corner_prefs(pts: list[Pt], src: Box) -> list[tuple[int, int]]:
+    """Spots in the empty corner beside a decision's side vertex, above or below the arrow.
+
+    The edge that bends down takes the lower corner and one that bends up the upper one, so each
+    label stays attached to its own branch even in a narrow gutter.
+    """
+    (x0, y0), (x1, y1) = pts[0], pts[1]
+    if abs(y0 - y1) >= 1 or abs(x1 - x0) < 1:
+        return []
+    sx, sy, sw, sh = src
+    sign = 1 if x1 > x0 else -1
+    cx = int(x0 + sign * (LABEL_W / 2 + Inches(0.02)))
+    above = (cx, int(y0 - LABEL_H - Inches(0.02)))
+    below = (cx, int(y0 + Inches(0.02)))
+    goes_down = len(pts) >= 3 and pts[2][1] > pts[1][1] + 1
+    return [below, above] if goes_down else [above, below]
+
+
 def _pick_label(points: list[Pt], taken: list[tuple], boxes: list[Box], pref: list[tuple[int, int]] | None = None) -> tuple[int, int]:
     cands = (pref or []) + _label_candidates(points)
     for cx, ty in cands:
@@ -333,10 +351,16 @@ def _build_edges(f: Flow, pos: dict[str, Box], gap_x: float, corr: float) -> lis
         obstacles = [b for i, b in pos.items() if i not in (e.src, e.dst)]
         routes.append(_route(pos[e.src], pos[e.dst], obstacles, gap_x, corr))
     prefs = _branch_prefs(routes)
+    kinds = {n.id: n.kind for n in f.nodes}
     note_taken: list[tuple] = []
     for k, e in enumerate(f.edges):
         pts = routes[k]
-        lx, ly = _pick_label(pts, taken, list(pos.values()), prefs.get(k)) if e.label else _label_candidates(pts)[0]
+        decision = kinds.get(e.src) == "decision"
+        boxes = [b for i, b in pos.items() if not (decision and i == e.src)]  # diamond corners are empty
+        pref = (prefs.get(k) or []) + (_corner_prefs(pts, pos[e.src]) if decision else [])
+        if decision and pref:  # corners first: they stay clear of boxes in tight gutters
+            pref = _corner_prefs(pts, pos[e.src]) + (prefs.get(k) or [])
+        lx, ly = _pick_label(pts, taken, boxes, pref) if e.label else _label_candidates(pts)[0]
         edge = {"src": e.src, "dst": e.dst, "label": e.label, "note": e.note,
                 "points": [[int(round(px)), int(round(py))] for px, py in pts],
                 "label_x": lx, "label_y": ly, "begin_site": None, "end_site": None, "note_box": None}

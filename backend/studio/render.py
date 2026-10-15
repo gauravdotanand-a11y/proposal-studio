@@ -437,6 +437,8 @@ def _flow_slide(slide, f: Flow):
         tf.margin_left = tf.margin_right = Inches(0.05)
         tf.vertical_anchor = MSO_ANCHOR.MIDDLE
         size = Pt(9) if n["w"] < Inches(1.4) or n["kind"] == "decision" else Pt(10)
+        if n["kind"] == "decision" and n["w"] < Inches(1.0):
+            size = Pt(8)
         if n["kind"] == "decision":
             tf.margin_left = tf.margin_right = 0
         _text(tf, n["label"], size, False, T.WHITE if n["kind"] == "ai" else T.NAVY, PP_ALIGN.CENTER)

@@ -102,7 +102,8 @@ _TASK_PROMPTS: dict[str, str] = {
         '[{"kind": "...", "title": "..."}]}. Allowed kinds: ' + ", ".join(OUTLINE_KINDS) + ". "
         "summary = executive summary; asis = current manual process flow; tobe = automated flow in swimlanes; "
         "assumptions; scope; risks; benefits = benefit drivers and cost/CBA; gantt = execution plan; "
-        "next_steps. Choose 5-10 slides in a sensible order, each kind at most once, with a short specific title. "
+        "next_steps. Choose 5-10 slides in a sensible order, each kind at most once. Each title is a short label of "
+        "at most 6 words (for example \"Current manual process\"), never a sentence and never an explanation after a dash. "
         "Include only slides the brief gives enough material for."
     ),
     "summary": (
@@ -256,12 +257,40 @@ def _dedupe(items: list[str], existing: list[str], min_len: int, cap: int) -> tu
     return out[:cap], dropped + max(0, len(out) - cap)
 
 
+def _short_title(t: str, max_len: int = 60) -> str:
+    """Keep a slide title a label: drop an explanation after a dash/colon and cap the length."""
+    t = t.strip()
+    for sep in (" \u2014 ", " \u2013 ", " - ", ": "):
+        if sep in t:
+            t = t.split(sep, 1)[0].strip()
+    t = re.sub(r"\s*\([^)]*\)\s*$", "", t).strip() or t
+    if len(t) > max_len:
+        t = t[:max_len].rsplit(" ", 1)[0].rstrip(",;:-") + "\u2026"
+    return t
+
+
 def _numbers(t: str) -> set[str]:
     out = set()
     for m in re.findall(r"\d+(?:[.,]\d+)*", t):
         out.add(m)
         out.add(m.replace(",", ""))
     return out
+
+
+# Straight unit conversions of a stated figure are not inventions (monthly to yearly, hours to minutes).
+_DERIVE = (12, 52, 250, 365, 60)
+
+
+def _derived_numbers(t: str) -> set[float]:
+    vals: set[float] = set()
+    for m in re.findall(r"\d+(?:\.\d+)?", t.replace(",", "")):
+        v = float(m)
+        vals.add(v)
+        for k in _DERIVE:
+            vals.add(v * k)
+            if v and k == 60:
+                vals.add(v / k)
+    return vals
 
 
 def _finalize_flow(data: dict, task: str, source_text: str) -> tuple[dict, list[str]]:
@@ -385,7 +414,10 @@ def finalize(task: str, data: dict, source_text: str = "", existing: list[str] |
                 warns.append(f'Dropped a second "{kind}" slide.')
             else:
                 seen.add(kind)
-                slides.append({"kind": kind, "title": sl["title"].strip()})
+                title = _short_title(sl["title"])
+                if title != sl["title"].strip():
+                    warns.append(f'Shortened the title for "{kind}".')
+                slides.append({"kind": kind, "title": title})
         if len(slides) < 2:
             raise LLMValidationError("the outline needs at least 2 known slide kinds")
         return {"title": data["title"].strip(), "subtitle": data["subtitle"].strip(), "slides": slides[:10]}, warns
@@ -414,13 +446,15 @@ def finalize(task: str, data: dict, source_text: str = "", existing: list[str] |
         return {"in_scope": ins, "out_scope": outs}, warns
     if task == "benefits":
         allowed = _numbers(source_text)
+        derived = _derived_numbers(source_text)
         warns, drivers = [], []
         for d in data["drivers"]:
             d = dict(d)
             for f in ("annual_volume", "minutes_saved", "hourly_rate"):
                 v = d[f]
                 txt = f"{v:g}"
-                if v and not (txt in allowed or f"{v:,.0f}" in allowed or txt.rstrip("0").rstrip(".") in allowed):
+                if v and not (txt in allowed or f"{v:,.0f}" in allowed or txt.rstrip("0").rstrip(".") in allowed
+                              or any(abs(v - x) < 1e-6 for x in derived)):
                     warns.append(f'"{d["name"]}": cleared {f.replace("_", " ")} {txt} because it is not in your input.')
                     d[f] = 0
             if d["success_rate"] > 1 or d["success_rate"] < 0:

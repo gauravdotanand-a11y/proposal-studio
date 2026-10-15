@@ -30,8 +30,13 @@ def text_h(lines: int, size_pt: float, after_pt: float = 0.0) -> int:
 
 
 def title_size(text: str, width: float, base: float = 28, lo: float = 18) -> float:
-    """Largest size (not above `base`) that keeps the title within two lines."""
-    for s in range(int(base), int(lo) - 1, -2):
+    """Largest size that keeps the title to one line at `base`, else to two lines at <= 24pt.
+
+    Two lines at 24pt end above the content area; two lines at 28pt touch it.
+    """
+    if est_lines(text, width, base, True) <= 1:
+        return base
+    for s in range(int(min(base, 24)), int(lo) - 1, -2):
         if est_lines(text, width, s, True) <= 2:
             return s
     return lo

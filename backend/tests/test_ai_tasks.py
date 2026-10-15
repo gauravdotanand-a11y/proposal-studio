@@ -62,3 +62,25 @@ def test_outline_needs_two_slides():
     import pytest
     with pytest.raises(llm.LLMValidationError):
         llm.finalize("outline", {"title": "", "subtitle": "", "slides": [{"kind": "nope", "title": ""}]})
+
+
+def test_outline_titles_are_shortened_to_labels():
+    prov = Fake({"title": "T", "subtitle": "S", "slides": [
+        {"kind": "summary", "title": "Executive summary \u2014 use OCR + RPA to automate invoice keying for 4,000 invoices/month"},
+        {"kind": "tobe", "title": "Automated flow (swimlanes)"},
+        {"kind": "risks", "title": "Risks and mitigations"}]})
+    res, warns = llm.run_task(prov, "outline", "brief")
+    assert [s["title"] for s in res["slides"]] == ["Executive summary", "Automated flow", "Risks and mitigations"]
+    assert len(warns) == 2
+
+
+def test_benefit_volume_derived_from_monthly_figure_is_kept():
+    prov = Fake({"drivers": [{"name": "Keying", "annual_volume": 48000, "minutes_saved": 6, "hourly_rate": 0, "success_rate": 0.65}]})
+    res, warns = llm.run_task(prov, "benefits", "About 4,000 invoices a month, each takes 6 minutes.")
+    assert res["drivers"][0]["annual_volume"] == 48000 and not warns
+
+
+def test_benefit_invented_volume_still_cleared():
+    prov = Fake({"drivers": [{"name": "Keying", "annual_volume": 51234, "minutes_saved": 6, "hourly_rate": 0, "success_rate": 1}]})
+    res, warns = llm.run_task(prov, "benefits", "About 4,000 invoices a month, each takes 6 minutes.")
+    assert res["drivers"][0]["annual_volume"] == 0 and warns
