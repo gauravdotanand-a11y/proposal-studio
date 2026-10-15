@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Box } from "@mui/material";
 import { FlowPreview } from "./FlowPreview";
 import { costSummary } from "./editors";
@@ -118,7 +119,7 @@ function Body({ s, meta }: { s: Slide; meta: Meta }) {
   }
 }
 
-export function SlideThumb({ slide, meta }: { slide: Slide; meta: Meta }) {
+function SlideThumbImpl({ slide, meta }: { slide: Slide; meta: Meta }) {
   if (slide.type === "flow" && slide.flow) {
     return (
       <Box sx={{ lineHeight: 0 }}>
@@ -137,3 +138,6 @@ export function SlideThumb({ slide, meta }: { slide: Slide; meta: Meta }) {
     </Box>
   );
 }
+
+/** Re-render only when this slide (or the deck meta) changed; slides are updated immutably. */
+export const SlideThumb = memo(SlideThumbImpl, (a, b) => a.slide === b.slide && a.meta === b.meta);

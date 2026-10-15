@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import os
 from pathlib import Path
 
 from lxml import etree
@@ -13,10 +14,12 @@ from pptx.util import Emu, Inches, Pt
 from . import templates as TPL
 from . import theme as T
 from .fit import expand, gantt_row_heights, gantt_rows, table_row_h, title_size, est_lines, text_h
+from . import interop
 from .layout import layout_flow
 from .models import Assumptions, Cost, Flow, Gantt, Proposal, Slide
 
 _NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
+_NS_P = "http://schemas.openxmlformats.org/presentationml/2006/main"
 
 
 def _text(tf, text, size=None, bold=False, color=None, align=None):
@@ -381,6 +384,24 @@ _SHAPE = {
 }
 
 
+def _set_descr(shape, text: str) -> None:
+    """Alt text for screen readers (the shape's cNvPr `descr`)."""
+    for el in shape._element.iter(f"{{{_NS_P}}}cNvPr"):
+        el.set("descr", text[:250])
+        break
+
+
+def _describe_tables(slide, s: Slide) -> None:
+    what = {"gantt": "Gantt chart of activities by week", "compare": "Gantt chart comparing plan versions",
+            "cost": "Cost and benefit table", "risks": "Table of risks, impact and mitigation",
+            "next_steps": "Table of next steps with owner and due date"}.get(s.type)
+    if not what:
+        return
+    for sh in slide.shapes:
+        if getattr(sh, "has_table", False) and sh.has_table and not sh._element.xpath(".//p:cNvPr[@descr]"):
+            _set_descr(sh, f"{what}: {sh.table.cell(0, 0).text or ''} {len(sh.table.rows) - 1} rows".strip())
+
+
 def _flow_slide(slide, f: Flow):
     _title(slide, f.title)
     lay = layout_flow(f, top=T.CONTENT_TOP + Inches(0.1))
@@ -419,6 +440,8 @@ def _flow_slide(slide, f: Flow):
         if n["kind"] == "decision":
             tf.margin_left = tf.margin_right = 0
         _text(tf, n["label"], size, False, T.WHITE if n["kind"] == "ai" else T.NAVY, PP_ALIGN.CENTER)
+        shp.name = f"node:{n['id']}"
+        _set_descr(shp, f"{n['kind']} step: {n['label']}")
         shapes[n["id"]] = shp
         if n.get("badge"):
             badges.append(n)
@@ -462,6 +485,9 @@ def _flow_slide(slide, f: Flow):
             line_owner.fill.background()
             line_owner.shadow.inherit = False
         line_owner.name = f"edge:{e['src']}->{e['dst']}"
+        names = {n["id"]: n["label"] for n in lay["nodes"]}
+        _set_descr(line_owner, f"Arrow from {names.get(e['src'], e['src'])} to {names.get(e['dst'], e['dst'])}"
+                               f"{' (' + e['label'] + ')' if e['label'] else ''}")
         line_owner.line.color.rgb = T.NAVY
         line_owner.line.width = Pt(1.25)
         ln = line_owner.line._get_or_add_ln()
@@ -693,12 +719,17 @@ def render(proposal: Proposal, out: str | Path, template: str | Path | None = No
                 _risks_slide(slide, s.risks)
             elif s.type == "next_steps":
                 _next_steps_slide(slide, s.next_steps, o.get("start", 0))
+            if piece.part == 0 and s.notes.strip():
+                slide.notes_slide.notes_text_frame.text = s.notes
+            _describe_tables(slide, s)
             if template:
                 _drop_empty_placeholders(slide)
                 if s.type != "title":
                     _template_footer(slide, layout, proposal.meta, i)
             elif s.type != "title":
                 _footer(slide, proposal.meta, i)
+    if os.environ.get("STUDIO_EMBED_SOURCE", "1") != "0":  # lets a locked-down org opt out of the round-trip item
+        interop.embed(prs, proposal)
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     prs.save(out)

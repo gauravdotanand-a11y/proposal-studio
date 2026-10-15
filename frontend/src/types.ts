@@ -24,6 +24,7 @@ export interface Slide {
   type: SlideType;
   title?: string;
   bullets?: string[];
+  notes?: string;
   flow?: Flow | null;
   gantt?: Gantt | null;
   cost?: Cost | null;

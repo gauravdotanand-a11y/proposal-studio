@@ -246,6 +246,7 @@ class Slide(BaseModel):
     assumptions: Optional[Assumptions] = None
     title: str = ""
     bullets: list[str] = []
+    notes: str = ""  # speaker notes
 
 
 class Proposal(BaseModel):

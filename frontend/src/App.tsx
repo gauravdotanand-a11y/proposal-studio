@@ -1,5 +1,5 @@
 import DragHandle from "@mui/icons-material/DragIndicator";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTheme } from "@mui/material/styles";
 import {
   Alert, AppBar, Box, Button, CircularProgress, Divider, Drawer, IconButton, List, ListItemButton, ListItemIcon,
@@ -13,6 +13,7 @@ import Undo from "@mui/icons-material/UndoOutlined";
 import Redo from "@mui/icons-material/RedoOutlined";
 import AutoAwesome from "@mui/icons-material/AutoAwesomeOutlined";
 import WarnIcon from "@mui/icons-material/WarningAmberOutlined";
+import MoreVert from "@mui/icons-material/MoreVert";
 import Add from "@mui/icons-material/Add";
 import Settings from "@mui/icons-material/TuneOutlined";
 import MenuIcon from "@mui/icons-material/MenuOutlined";
@@ -57,6 +58,9 @@ export default function App() {
   const [projects, setProjects] = useState<string[]>([]);
   const [addEl, setAddEl] = useState<HTMLElement | null>(null);
   const [openEl, setOpenEl] = useState<HTMLElement | null>(null);
+  const [moreEl, setMoreEl] = useState<HTMLElement | null>(null);
+  const [canPdf, setCanPdf] = useState(false);
+  const importRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [tplOpen, setTplOpen] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -90,6 +94,8 @@ export default function App() {
   useEffect(() => {
     try { localStorage.setItem(OPTS_KEY, JSON.stringify(opts)); } catch { /* storage unavailable */ }
   }, [opts]);
+  useEffect(() => { api.capabilities().then((c) => setCanPdf(c.pdf)).catch(() => setCanPdf(false)); }, []);
+
   // Ask the backend how the deck will fit (shrunk text, split slides) so the editor can say so before export.
   useEffect(() => {
     if (!p) return;
@@ -125,16 +131,28 @@ export default function App() {
   if (!p) return <Box sx={{ p: 6, textAlign: "center" }}><CircularProgress /></Box>;
   const slide = sel >= 0 ? p.slides[sel] ?? null : null;
 
-  const doExport = async () => {
+  const download = (blob: Blob, filename: string) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const doImport = async (f: File) => {
+    try {
+      const r = await api.importDeck(f);
+      setP(() => r.proposal);
+      setSel(-1);
+      setToast({ msg: r.warnings.length ? r.warnings[0] : `Imported ${f.name}. Undo restores the previous deck.`, sev: "success" });
+    } catch (e) { setToast({ msg: String(e), sev: "error" }); }
+    finally { if (importRef.current) importRef.current.value = ""; }
+  };
+  const doExport = async (format: "pptx" | "pdf" = "pptx") => {
     setBusy(true);
     try {
-      const { blob, warnings } = await api.exportPptx(clean(p), opts);
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `${name || "proposal"}.pptx`;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      setToast({ msg: warnings ? `Exported with notes: ${warnings}` : "Exported .pptx", sev: "success" });
+      const { blob, warnings } = await api.exportPptx(clean(p), opts, format);
+      download(blob, `${name || "proposal"}.${format}`);
+      setToast({ msg: warnings ? `Exported with notes: ${warnings}` : `Exported .${format}`, sev: "success" });
     } catch (e) { setToast({ msg: String(e), sev: "error" }); }
     finally { setBusy(false); }
   };
@@ -272,6 +290,11 @@ export default function App() {
           <Tooltip title="Open saved project">
             <IconButton aria-label="open project" onClick={async (e) => { setOpenEl(e.currentTarget); setProjects(await api.projects().catch(() => [])); }}><FolderOpen /></IconButton>
           </Tooltip>
+          <Tooltip title="More: import, project file, PDF">
+            <IconButton aria-label="more actions" onClick={(e) => setMoreEl(e.currentTarget)}><MoreVert /></IconButton>
+          </Tooltip>
+          <input ref={importRef} type="file" hidden accept=".pptx,.potx,.json,.yaml,.yml"
+            onChange={(e) => e.target.files?.[0] && doImport(e.target.files[0])} />
           {narrow ? (
             <>
               <Tooltip title={opts.template ? `Template: ${opts.template}` : opts.preset && opts.preset !== "corporate" ? `Look: ${opts.preset}` : "Template"}>
@@ -280,7 +303,7 @@ export default function App() {
               <Tooltip title="Save"><IconButton aria-label="save" onClick={doSave}><Save /></IconButton></Tooltip>
               <Tooltip title="Export .pptx">
                 <span>
-                  <IconButton aria-label="export pptx" color="secondary" disabled={busy} onClick={doExport}>
+                  <IconButton aria-label="export pptx" color="secondary" disabled={busy} onClick={() => doExport()}>
                     {busy ? <CircularProgress size={20} color="inherit" /> : <Download />}
                   </IconButton>
                 </span>
@@ -293,7 +316,7 @@ export default function App() {
               </Button>
               <Button startIcon={<Save />} onClick={doSave}>Save</Button>
               <Button variant="contained" color="secondary" startIcon={busy ? <CircularProgress size={16} color="inherit" /> : <Download />}
-                disabled={busy} onClick={doExport}>Export .pptx</Button>
+                disabled={busy} onClick={() => doExport()}>Export .pptx</Button>
             </>
           )}
         </Toolbar>
@@ -346,6 +369,11 @@ export default function App() {
             {slide?.type === "flow" && slide.flow && (
               <FlowEditor key={`${sel}-${hist.version}`} f={slide.flow} deckContext={deckContext} asIsText={asIsText} onChange={(f) => updateSlide(sel, { flow: f })} />
             )}
+            {sel >= 0 && slide && (
+              <TextField label="Speaker notes" multiline minRows={2} fullWidth sx={{ mt: 2 }} value={slide.notes ?? ""}
+                placeholder="Optional. Exported as PowerPoint speaker notes."
+                onChange={(e) => updateSlide(sel, { notes: e.target.value })} />
+            )}
           </Box>
         </Box>
       </Box>
@@ -361,6 +389,13 @@ export default function App() {
             <ListItemIcon>{ICON[t]}</ListItemIcon>{LABEL[t]}
           </MenuItem>
         ))}
+      </Menu>
+      <Menu anchorEl={moreEl} open={!!moreEl} onClose={() => setMoreEl(null)}>
+        <MenuItem onClick={() => { setMoreEl(null); importRef.current?.click(); }}>Import deck (.pptx, .json, .yaml)</MenuItem>
+        <MenuItem onClick={() => { setMoreEl(null); download(new Blob([JSON.stringify(clean(p), null, 2)], { type: "application/json" }), `${name || "proposal"}.json`); }}>
+          Download project file (.json)</MenuItem>
+        <MenuItem disabled={!canPdf || busy} onClick={() => { setMoreEl(null); doExport("pdf"); }}>
+          Export PDF{canPdf ? "" : " (needs LibreOffice on the server)"}</MenuItem>
       </Menu>
       <Menu anchorEl={openEl} open={!!openEl} onClose={() => setOpenEl(null)}>
         {projects.length === 0 && <MenuItem disabled>No saved projects</MenuItem>}

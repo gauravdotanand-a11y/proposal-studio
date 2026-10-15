@@ -34,6 +34,14 @@ native). **My templates**: upload, rename, download and delete your own corporat
 Sidebar -> "Draft deck from brief": describe the process, review the exact payload, pick slides from the proposed outline,
 review each draft, then add them to the deck as one undoable step. Needs a configured LLM provider.
 
+## Notes, import, PDF
+- **Speaker notes**: per-slide field under every editor; exported as PowerPoint notes.
+- **Import** (toolbar `...` menu): a `.pptx` exported by this app restores the whole deck exactly (the source is embedded as a
+  standard customXml item; set `STUDIO_EMBED_SOURCE=0` to disable). Other `.pptx` files import as editable bullet slides
+  (text and tables only). `.json` / `.yaml` proposals import directly. **Download project file** saves the deck as JSON.
+- **PDF export**: needs LibreOffice (`soffice`) on the machine running the backend; the menu item is disabled otherwise.
+- **Accessibility**: tables and diagram shapes carry alt text (arrows read as "Arrow from A to B (Yes)").
+
 ## Tests
 ```bash
 cd backend && ../.venv/bin/python -m pytest -q      # backend

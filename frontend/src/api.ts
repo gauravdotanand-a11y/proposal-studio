@@ -54,8 +54,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(p),
     }).then(j<{ saved: string }>),
-  async exportPptx(p: Proposal, o?: ExportOpts): Promise<{ blob: Blob; warnings: string }> {
+  capabilities: () => fetch("/api/capabilities").then(j<{ pdf: boolean }>),
+  importDeck: (f: File) =>
+    fetch("/api/import", { method: "POST", body: f }).then(j<{ proposal: Proposal; warnings: string[]; source: string }>),
+  async exportPptx(p: Proposal, o?: ExportOpts, format: "pptx" | "pdf" = "pptx"): Promise<{ blob: Blob; warnings: string }> {
     const q = new URLSearchParams();
+    if (format !== "pptx") q.set("format", format);
     if (!o?.template && o?.preset) q.set("preset", o.preset);
     if (o?.template) {
       q.set("template", o.template);

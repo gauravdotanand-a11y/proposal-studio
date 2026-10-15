@@ -14,6 +14,7 @@ from pydantic import BaseModel, ValidationError
 from starlette.background import BackgroundTask
 
 from . import llm
+from . import interop
 from . import templates as tpl
 from .library import LIBRARY
 from .layout import layout_flow
@@ -112,7 +113,8 @@ def _template_path(name: str) -> Path:
 
 @app.post("/api/render")
 def render_deck(body: dict, template: str | None = None, title_layout: int | None = None,
-                content_layout: int | None = None, use_theme_colors: bool = True, preset: str | None = None):
+                content_layout: int | None = None, use_theme_colors: bool = True, preset: str | None = None,
+                format: str = "pptx"):
     p = _parse(body)
     tpath = None
     if template:
@@ -130,6 +132,19 @@ def render_deck(body: dict, template: str | None = None, title_layout: int | Non
         raise HTTPException(400, str(e))
     name = re.sub(r"[^A-Za-z0-9_-]+", "_", p.meta.title).strip("_") or "proposal"
     header = " | ".join(warnings).encode("ascii", "replace").decode()
+    if format == "pdf":
+        try:
+            pdf = interop.to_pdf(Path(tmp.name))
+        except RuntimeError as e:
+            raise HTTPException(501, str(e))
+        finally:
+            Path(tmp.name).unlink(missing_ok=True)
+        return FileResponse(pdf, media_type="application/pdf", filename=f"{name}.pdf",
+                            headers={"X-Render-Warnings": header} if header else None,
+                            background=BackgroundTask(lambda: __import__("shutil").rmtree(pdf.parent, ignore_errors=True)))
+    if format != "pptx":
+        Path(tmp.name).unlink(missing_ok=True)
+        raise HTTPException(400, "format must be pptx or pdf")
     return FileResponse(
         tmp.name,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -137,6 +152,24 @@ def render_deck(body: dict, template: str | None = None, title_layout: int | Non
         headers={"X-Render-Warnings": header} if header else None,
         background=BackgroundTask(lambda: Path(tmp.name).unlink(missing_ok=True)),
     )
+
+
+@app.get("/api/capabilities")
+def capabilities() -> dict:
+    return {"pdf": interop.soffice_path() is not None}
+
+
+@app.post("/api/import")
+async def import_deck(request: Request) -> dict:
+    """Raw-body import of a .pptx (exact when exported by this app), .json or .yaml proposal."""
+    data = await request.body()
+    if len(data) > tpl.MAX_UPLOAD:
+        raise HTTPException(400, "file is larger than 25 MB")
+    try:
+        proposal, warnings, source = interop.import_any(data)
+    except interop.ImportError_ as e:
+        raise HTTPException(400, str(e))
+    return {"proposal": proposal.model_dump(mode="json"), "warnings": warnings, "source": source}
 
 
 @app.get("/api/presets")
