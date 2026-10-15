@@ -22,9 +22,18 @@ export interface TemplateInfo {
 export interface PreviewShape { x: number; y: number; w: number; h: number; kind: string; label: string; fill: string | null; src?: string }
 export interface PreviewLayout { index: number; name: string; background: string | null; show_master_shapes: boolean; shapes: PreviewShape[] }
 export interface TemplatePreview { slide_w: number; slide_h: number; background: string; master_shapes: PreviewShape[]; layouts: PreviewLayout[] }
-export interface ExportOpts { template: string; titleLayout: number | null; contentLayout: number | null; useThemeColors: boolean }
+export interface ExportOpts { template: string; titleLayout: number | null; contentLayout: number | null; useThemeColors: boolean; preset: string }
+export interface Preset { id: string; label: string; description: string; font: string; colors: Record<string, string> }
+export interface TemplateRow {
+  name: string; size_kb: number; modified: number; ok: boolean; warnings: string[];
+  slide_w_in?: number; slide_h_in?: number; layouts?: number; colors?: Record<string, string>;
+}
 
 export const api = {
+  presets: () => fetch("/api/presets").then(j<Preset[]>),
+  templateDetails: () => fetch("/api/templates/details").then(j<TemplateRow[]>),
+  renameTemplate: (n: string, to: string) =>
+    fetch(`/api/templates/${encodeURIComponent(n)}/rename?to=${encodeURIComponent(to)}`, { method: "POST" }).then(j<{ name: string }>),
   templates: () => fetch("/api/templates").then(j<string[]>),
   templatePreview: (n: string) => fetch(`/api/templates/${encodeURIComponent(n)}/preview`).then(j<TemplatePreview>),
   templateInfo: (n: string) => fetch(`/api/templates/${encodeURIComponent(n)}`).then(j<TemplateInfo>),
@@ -46,6 +55,7 @@ export const api = {
     }).then(j<{ saved: string }>),
   async exportPptx(p: Proposal, o?: ExportOpts): Promise<{ blob: Blob; warnings: string }> {
     const q = new URLSearchParams();
+    if (!o?.template && o?.preset) q.set("preset", o.preset);
     if (o?.template) {
       q.set("template", o.template);
       if (o.titleLayout !== null) q.set("title_layout", String(o.titleLayout));

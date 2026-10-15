@@ -110,7 +110,7 @@ def _template_path(name: str) -> Path:
 
 @app.post("/api/render")
 def render_deck(body: dict, template: str | None = None, title_layout: int | None = None,
-                content_layout: int | None = None, use_theme_colors: bool = True):
+                content_layout: int | None = None, use_theme_colors: bool = True, preset: str | None = None):
     p = _parse(body)
     tpath = None
     if template:
@@ -122,7 +122,7 @@ def render_deck(body: dict, template: str | None = None, title_layout: int | Non
     warnings: list[str] = []
     try:
         render(p, tmp.name, template=tpath, title_layout=title_layout, content_layout=content_layout,
-               use_theme_colors=use_theme_colors, warnings=warnings)
+               use_theme_colors=use_theme_colors, warnings=warnings, preset=preset)
     except ValueError as e:
         Path(tmp.name).unlink(missing_ok=True)
         raise HTTPException(400, str(e))
@@ -135,6 +135,51 @@ def render_deck(body: dict, template: str | None = None, title_layout: int | Non
         headers={"X-Render-Warnings": header} if header else None,
         background=BackgroundTask(lambda: Path(tmp.name).unlink(missing_ok=True)),
     )
+
+
+@app.get("/api/presets")
+def list_presets() -> list[dict]:
+    from . import theme
+    return [{"id": k, "label": v["label"], "description": v["description"], "font": v["font"],
+             "colors": v["colors"]} for k, v in theme.PRESETS.items()]
+
+
+@app.get("/api/templates/details")
+def template_details() -> list[dict]:
+    """One row per stored template for the management view; unreadable files are flagged, not hidden."""
+    rows = []
+    for path in sorted(TEMPLATES.glob("*.pptx")) if TEMPLATES.exists() else []:
+        st = path.stat()
+        row = {"name": path.stem, "size_kb": round(st.st_size / 1024), "modified": int(st.st_mtime)}
+        try:
+            info = tpl.inspect(path)
+            row.update(slide_w_in=info["slide_w_in"], slide_h_in=info["slide_h_in"], layouts=len(info["layouts"]),
+                       colors={k: v for k, v in info["colors"].items() if k.startswith("accent") or k == "dk2"},
+                       warnings=info["warnings"], ok=True)
+        except Exception as e:
+            row.update(ok=False, warnings=[f"could not read template: {type(e).__name__}"])
+        rows.append(row)
+    return rows
+
+
+@app.post("/api/templates/{name}/rename")
+def rename_template(name: str, to: str) -> dict:
+    src, dst = _template_path(name), _template_path(to)
+    if not src.exists():
+        raise HTTPException(404, "not found")
+    if dst.exists():
+        raise HTTPException(409, f"a template named '{to}' already exists")
+    src.rename(dst)
+    return {"name": to}
+
+
+@app.get("/api/templates/{name}/file")
+def download_template(name: str):
+    path = _template_path(name)
+    if not path.exists():
+        raise HTTPException(404, "not found")
+    return FileResponse(path, filename=f"{name}.pptx",
+                        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
 
 @app.get("/api/templates")

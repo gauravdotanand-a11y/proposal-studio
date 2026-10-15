@@ -18,7 +18,9 @@ from .models import Assumptions, Cost, Flow, Gantt, Proposal, Slide
 _NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
 
 
-def _text(tf, text, size=T.BODY_SIZE, bold=False, color=T.GREY, align=None):
+def _text(tf, text, size=None, bold=False, color=None, align=None):
+    size = T.BODY_SIZE if size is None else size
+    color = T.GREY if color is None else color  # resolved per call so looks and templates can override
     tf.word_wrap = True
     p = tf.paragraphs[0]
     p.text = text
@@ -103,7 +105,8 @@ def _bullets_slide(slide, title, items, numbered=False):
                 r.font.name = T.FONT
 
 
-def _cell(cell, text, fill=None, bold=False, color=T.GREY, size=Pt(10), align=PP_ALIGN.CENTER):
+def _cell(cell, text, fill=None, bold=False, color=None, size=Pt(10), align=PP_ALIGN.CENTER):
+    color = T.GREY if color is None else color
     cell.text = ""
     p = cell.text_frame.paragraphs[0]
     p.text = text
@@ -586,9 +589,14 @@ def _drop_empty_placeholders(slide) -> None:
 
 def render(proposal: Proposal, out: str | Path, template: str | Path | None = None,
            title_layout: int | None = None, content_layout: int | None = None,
-           use_theme_colors: bool = True, warnings: list[str] | None = None) -> Path:
+           use_theme_colors: bool = True, warnings: list[str] | None = None,
+           preset: str | None = None) -> Path:
     warnings = warnings if warnings is not None else []
     overrides: dict = {}
+    if preset and not template:
+        if preset not in T.PRESETS:
+            raise ValueError(f"unknown look '{preset}'")
+        overrides.update(T.preset_overrides(preset))
     if template:
         prs = Presentation(str(template))
         _strip_slides(prs)

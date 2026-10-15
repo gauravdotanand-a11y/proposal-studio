@@ -121,3 +121,59 @@ def test_preview_geometry(dirs):
     phs = [s for s in title_only["shapes"] if s["kind"] == "placeholder"]
     assert any(s["label"] == "Title" and s["w"] > 0 and s["h"] > 0 for s in phs)
     assert client.get("/api/templates/nope/preview").status_code == 404
+
+
+def test_presets_render_with_their_colors_and_font(tmp_path):
+    import yaml
+    from pptx import Presentation
+    from studio import theme
+    from studio.models import Proposal
+    from studio.render import render
+    p = Proposal.model_validate(yaml.safe_load(open("../examples/sample.yaml")))
+    seen = {}
+    for name in theme.PRESETS:
+        out = tmp_path / f"{name}.pptx"
+        render(p, out, preset=name)
+        prs = Presentation(str(out))
+        fills = set()
+        for sh in prs.slides[1].shapes:
+            try:
+                fills.add(str(sh.fill.fore_color.rgb))
+            except Exception:
+                pass
+        seen[name] = fills
+    assert theme.PRESETS["forest"]["colors"]["TEAL"] in seen["forest"]
+    assert theme.PRESETS["corporate"]["colors"]["TEAL"] not in seen["forest"]
+    assert theme.FONT == "Arial"  # override restored after rendering
+
+
+def test_unknown_preset_rejected(tmp_path):
+    import pytest, yaml
+    from studio.models import Proposal
+    from studio.render import render
+    p = Proposal.model_validate(yaml.safe_load(open("../examples/sample.yaml")))
+    with pytest.raises(ValueError):
+        render(p, tmp_path / "x.pptx", preset="nope")
+
+
+def test_preset_recolours_body_text(tmp_path):
+    import yaml
+    from pptx import Presentation
+    from studio import theme
+    from studio.models import Proposal
+    from studio.render import render
+    p = Proposal.model_validate(yaml.safe_load(open("../examples/sample.yaml")))
+    out = tmp_path / "m.pptx"
+    render(p, out, preset="mono")
+    colors = set()
+    for sl in Presentation(str(out)).slides:
+        for sh in sl.shapes:
+            if sh.has_text_frame:
+                for para in sh.text_frame.paragraphs:
+                    for r in para.runs:
+                        try:
+                            colors.add(str(r.font.color.rgb))
+                        except Exception:
+                            pass
+    assert theme.PRESETS["mono"]["colors"]["GREY"] in colors
+    assert theme.PRESETS["corporate"]["colors"]["GREY"] not in colors

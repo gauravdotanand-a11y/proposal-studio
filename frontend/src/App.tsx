@@ -33,7 +33,7 @@ import type { Proposal, Slide, SlideType } from "./types";
 
 const DRAFT_KEY = "proposal-studio-draft";
 const OPTS_KEY = "proposal-studio-export-opts";
-const DEFAULT_OPTS: ExportOpts = { template: "", titleLayout: null, contentLayout: null, useThemeColors: true };
+const DEFAULT_OPTS: ExportOpts = { template: "", titleLayout: null, contentLayout: null, useThemeColors: true, preset: "corporate" };
 
 function clean(p: Proposal): Proposal {
   return { ...p, slides: p.slides.map((s) => s.type === "bullets" ? { ...s, bullets: (s.bullets ?? []).filter((b) => b.trim()) } : s) };
@@ -258,7 +258,7 @@ export default function App() {
           </Tooltip>
           {narrow ? (
             <>
-              <Tooltip title={opts.template ? `Template: ${opts.template}` : "Template"}>
+              <Tooltip title={opts.template ? `Template: ${opts.template}` : opts.preset && opts.preset !== "corporate" ? `Look: ${opts.preset}` : "Template"}>
                 <IconButton aria-label="template" onClick={() => setTplOpen(true)}><Slideshow /></IconButton>
               </Tooltip>
               <Tooltip title="Save"><IconButton aria-label="save" onClick={doSave}><Save /></IconButton></Tooltip>
@@ -273,7 +273,7 @@ export default function App() {
           ) : (
             <>
               <Button startIcon={<Slideshow />} onClick={() => setTplOpen(true)}>
-                {opts.template ? `Template: ${opts.template}` : "Template"}
+                {opts.template ? `Template: ${opts.template}` : opts.preset && opts.preset !== "corporate" ? `Look: ${opts.preset}` : "Template"}
               </Button>
               <Button startIcon={<Save />} onClick={doSave}>Save</Button>
               <Button variant="contained" color="secondary" startIcon={busy ? <CircularProgress size={16} color="inherit" /> : <Download />}
