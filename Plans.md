@@ -68,44 +68,47 @@ Legend: DONE / PARTIAL / TODO
 | 5 | Corporate templates | DONE | .pptx/.potx upload (macros rejected), slide master/layout/footer reuse, theme-colour mapping, layout thumbnails, title/content layout picker |
 | 6 | Screenshot slide types | DONE | Solution overview, To-Be swimlanes, plan revision (previous vs updated), Gantt sections, one-time/recurring costs, benefit-driver calculator, scope, risks, next steps |
 | 7 | Editing experience | DONE | Cost editor rework (responsive cards), responsive shell, slide thumbnails with drag-reorder, undo/redo, new-proposal wizard, interactive flow canvas (select, drag-to-connect, drag-to-add) |
-| 8 | Hardening and polish | TODO | See section 4 |
+| 8 | Hardening and polish | PARTIAL | Render checks via LibreOffice, stress tests, Gantt week cap, overflow guards (see 11), editor layout fixes, CI. Remaining items in section 4 |
+| 9 | Looks and templates | DONE | 5 built-in looks (Corporate, Forest, Slate, Plum, Monochrome); template gallery with details, rename, download, delete; no silent overwrite on upload |
+| 10 | AI drafting | DONE (OpenAI-compatible verified live) | Tasks: assumptions, flow, To-Be, summary, risks, scope, benefit drivers, outline. "Draft deck from brief": payload preview, outline, parallel per-slide drafts, accept/reject, one undoable step. Synthetic eval set (7/7 live). Git-ignored `.env` loader |
+| 11 | Fit to slide | DONE | `fit.py`: font stepping, continuation slides for long lists/tables/Gantt/cost, dense flows split into linked parts, title scaling, per-slide notes in API and UI |
+| 12 | Interop | DONE (PowerPoint open not yet confirmed) | Speaker notes, alt text, exact round-trip import of exported decks (customXml), approximate import of other .pptx, JSON/YAML import, project file download, PDF export via LibreOffice |
 
 ### Slide types supported
 
-`title`, `solution`, `flow` (As-Is / To-Be / HL flow; optional lanes), `assumptions`, `bullets`, `gantt` (sections, holidays),
+`title`, `solution`, `flow` (As-Is / To-Be / HL flow; optional lanes), `assumptions`, `bullets`, `gantt` (sections, holidays; long plans split across slides),
 `compare`, `cost` (one-time/recurring + drivers), `scope`, `risks`, `next_steps`.
 
 ## 4. Remaining work
 
-Ordered by priority.
+Ordered by priority. Completed items are in the log (section 7).
 
 | Priority | Item | Why / notes |
 |---|---|---|
-| P0 | **Open `out/sample.pptx` in PowerPoint and report issues** | Never verified in real PowerPoint/Keynote. Tests only check structure. Needs the user |
-| P0 | Try a real corporate template | Master/logo/placeholder handling is only tested with synthetic templates |
-| ~~P1~~ | ~~Audit remaining editors at desktop and narrow widths~~ | DONE 2026-10-15: all editors checked at desktop and 400px; clipping fixed in solution, risks, next steps and plan-revision editors |
-| ~~P1~~ | ~~Packaging for a locked-down machine~~ | Dropped: Python and npm are allowed in the user's org, so a normal install is enough |
-| P1 | Test AI assist (incl. new brief-to-deck and eval set) against real Azure OpenAI | OpenAI-compatible path verified live (2026-10-15, synthetic data). Azure uses a different URL and `api-key` header and has only been tested against a mock |
-| P2 | Keep bent arrows attached in PowerPoint | Mostly DONE 2026-10-15 (checked in LibreOffice render): H-V-H bends are elbow connectors glued to both boxes (cylinder and oval connection sites remapped). Still freeform: U-shaped routes that return to the same x (e.g. decision to the box below it) and vertical-first bends. Not yet verified in real PowerPoint |
-| ~~P2~~ | ~~More AI tasks~~ | DONE 2026-10-15: executive summary, risks, scope and benefit drivers (benefit figures not in the input are cleared). UI buttons on scope, risks and cost editors; summary available via API |
-| ~~P2~~ | ~~AI evaluation set~~ | DONE 2026-10-15: `backend/studio/evalset.py` (7 synthetic cases, rubric checks). Run `python -m studio.evalset` against a configured provider. Live run 2026-10-15 (OpenAI-compatible, synthetic data): 7/7 pass, one run, rubric checks are structural not semantic |
-| ~~P2~~ | ~~Frontend unit tests~~ | DONE 2026-10-15: vitest, 10 tests (cost maths, AI review rows, factory, undo/redo) |
-| ~~P3~~ | ~~Touch-friendly reorder~~ | DONE 2026-10-15: pointer-based drag handle on slide thumbnails (touch and mouse) |
-| P3 | Gantt UX | Drag-resize/move/draw bars and holiday-aware week labels are DONE (2026-10-15). Native-chart export mode still open |
-| ~~P3~~ | ~~Version control and CI~~ | DONE 2026-10-15: git repo, `.github/workflows/ci.yml` (backend pytest, frontend vitest + build), `backend/requirements.txt`. CI not yet run on a remote |
+| P0 | **Open the exported deck in real PowerPoint** | Only checked structurally and in LibreOffice renders. Confirm slides 2, 7, 8 of `out/sample.pptx`, glued elbow arrows, and that the embedded customXml source item causes no repair prompt (`STUDIO_EMBED_SOURCE=0` disables it). Needs the user |
+| P0 | Try a real corporate template | Master/logo/placeholder handling is only tested with synthetic templates. Needs the user |
+| P1 | Azure OpenAI live run | OpenAI-compatible path verified live (eval 7/7, brief-to-deck). Azure uses a different URL and `api-key` header and has only been tested against a mock. Run `python -m studio.evalset` with `LLM_PROVIDER=azure` |
+| P2 | Remaining freeform arrows | U-shaped routes that return to the same x and vertical-first bends are still plain lines, not glued connectors |
+| P2 | Semantic AI evaluation | Rubric checks are structural. Compare models/prompts on wording quality, repeat runs for variance, consider strict JSON-schema output |
+| P2 | Imported non-app decks | Only text and tables are imported as bullet slides; diagrams, charts and pictures are not converted |
+| P3 | Gantt native-chart export mode | Export is an editable table grid today |
+| P3 | In-app previews use the Corporate palette | Exported decks follow the chosen look; the schematic thumbnails and canvas do not |
+| P3 | Per-project template/look | Template and look are remembered per browser, not stored in the project file |
 
 ## 5. Known limitations
 
-- In-app previews are schematic or SVG approximations (no LibreOffice); the exported .pptx is the source of truth.
-- Flow layout is automatic (no free positioning); graphs beyond about 14 steps in swimlane mode get small boxes and an overflow flag.
+- In-app previews are schematic or SVG approximations; the exported .pptx is the source of truth. Use `tools/render.sh` (LibreOffice) for a visual check; it is close to, not identical to, PowerPoint.
+- Fit-to-slide uses conservative text-height estimates, not font metrics, so a deck can still differ slightly in PowerPoint.
+- Flow layout is automatic (no free positioning). Flows above 14 steps, or with more than 10 swimlane columns, are split into linked slides.
 - Non-16:9 templates work but diagrams are cramped (a warning is shown).
 - Template previews show geometry, not fonts or exact rendering.
+- AI drafts can mix concerns (for example automation steps inside an As-Is flow); the review step is where this is caught.
 - npm's global cache on this machine has root-owned files; use a local cache (`npm install --cache <dir>`).
 
 ## 6. How to run and verify
 
 ```bash
-# backend tests (60 passing); frontend: cd frontend && npm test (10 passing)
+# backend tests (91 passing); frontend: cd frontend && npm test (14 passing)
 cd backend && ../.venv/bin/python -m pytest -q
 
 # generate the sample deck from YAML
