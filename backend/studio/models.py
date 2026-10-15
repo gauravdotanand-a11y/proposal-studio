@@ -46,8 +46,8 @@ class Flow(BaseModel):
 
 class Activity(BaseModel):
     name: str
-    start_week: int = Field(ge=1)
-    end_week: int = Field(ge=1)
+    start_week: int = Field(ge=1, le=156)  # 3 years; render time grows quickly with week count
+    end_week: int = Field(ge=1, le=156)
     section: str = ""  # consecutive activities with the same section share a header band
 
     @model_validator(mode="after")
@@ -60,7 +60,7 @@ class Activity(BaseModel):
 class Gantt(BaseModel):
     title: str = "High Level Execution Plan"
     start_date: date
-    weeks: Optional[int] = None  # inferred from activities when omitted
+    weeks: Optional[int] = Field(default=None, ge=1, le=156)  # inferred from activities when omitted
     activities: list[Activity]
     note: str = ""
     holidays: list[date] = []  # days off; week labels start/end on working days

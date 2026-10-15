@@ -157,8 +157,8 @@ export function GanttEditor({ g, onChange }: { g: Gantt; onChange: (g: Gantt) =>
               <TableRow key={i}>
                 <TableCell><TextField fullWidth value={a.name} onChange={(e) => setAct(i, { name: e.target.value })} /></TableCell>
                 <TableCell><TextField fullWidth placeholder="optional" value={a.section ?? ""} onChange={(e) => setAct(i, { section: e.target.value })} /></TableCell>
-                <TableCell><TextField type="number" inputProps={{ min: 1 }} value={a.start_week} onChange={(e) => setAct(i, { start_week: Math.max(1, num(e.target.value)) })} /></TableCell>
-                <TableCell><TextField type="number" inputProps={{ min: 1 }} value={a.end_week} onChange={(e) => setAct(i, { end_week: Math.max(1, num(e.target.value)) })} /></TableCell>
+                <TableCell><TextField type="number" inputProps={{ min: 1, max: 156 }} value={a.start_week} onChange={(e) => setAct(i, { start_week: Math.min(156, Math.max(1, num(e.target.value))) })} /></TableCell>
+                <TableCell><TextField type="number" inputProps={{ min: 1, max: 156 }} value={a.end_week} onChange={(e) => setAct(i, { end_week: Math.min(156, Math.max(1, num(e.target.value))) })} /></TableCell>
                 <TableCell><IconButton aria-label="remove activity" onClick={() => onChange({ ...g, activities: g.activities.filter((_, k) => k !== i) })}><DeleteOutline /></IconButton></TableCell>
               </TableRow>
             ))}

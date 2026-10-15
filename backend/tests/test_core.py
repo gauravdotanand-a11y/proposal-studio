@@ -80,3 +80,11 @@ def test_week_label_skips_holidays():
     g = Gantt(start_date=date(2026, 12, 21), activities=[{"name": "a", "start_week": 1, "end_week": 1}],
               holidays=[date(2026, 12, 21), date(2026, 12, 25)])
     assert g.week_range(1) == (date(2026, 12, 22), date(2026, 12, 24))
+
+
+def test_gantt_week_limit_prevents_runaway_render():
+    import pytest
+    from pydantic import ValidationError
+    from studio.models import Activity
+    with pytest.raises(ValidationError):
+        Activity(name="a", start_week=1, end_week=5000)
