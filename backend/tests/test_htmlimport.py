@@ -67,3 +67,27 @@ def test_api_import_detects_html():
     r = client.post("/api/import", content=SAMPLE.read_bytes())
     assert r.status_code == 200 and r.json()["source"] == "html"
     assert client.post("/api/import", content=b"<html><body></body></html>").status_code == 400
+
+
+FIX = Path(__file__).parent / "fixtures" / "messy_cards.html"
+
+
+def test_div_based_copilot_deck_cards_kpis_steps_and_grids():
+    p, w, _ = htmlimport.from_html(FIX.read_bytes())
+    assert p.meta.title.endswith("Invoice Automation Program") and p.meta.subtitle == "Faster close, fewer errors"
+    why = p.slides[1]
+    assert why.bullets[0] == "4,000 — invoices / month"
+    assert "Manual keying: Analysts re-type every field from the PDF." in why.bullets
+    assert not any(b in ("Confidential", "2") for b in why.bullets)  # footer and slide number dropped
+    assert p.slides[2].bullets == ["Capture email", "Extract fields", "Validate and post"]
+    risks = p.slides[3].risks.items
+    assert [(r.risk, r.impact, r.mitigation) for r in risks] == [
+        ("OCR quality", "High", "Review thresholds"), ("SME time", "Medium", "Book slots early")]
+
+
+def test_headerless_next_steps_table_uses_positional_columns():
+    html = "<section><h2>Next steps</h2><table><tr><td>Get access</td><td>IT</td><td>Week 1</td></tr>" \
+           "<tr><td>Pilot</td><td>Team</td><td>Week 3</td></tr></table></section>"
+    p, _, _ = _import("<section><h1>T</h1></section>" + html)
+    items = p.slides[1].next_steps.items
+    assert [(i.action, i.owner, i.due) for i in items] == [("Get access", "IT", "Week 1"), ("Pilot", "Team", "Week 3")]

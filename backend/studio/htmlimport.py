@@ -18,12 +18,39 @@ from .models import (Activity, Assumptions, Cost, CostLine, Flow, FlowEdge, Flow
 SKIP = {"script", "style", "noscript", "iframe", "template", "head", "meta", "link", "nav", "button"}
 HEADINGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
 TEXT_BLOCKS = {"p", "blockquote", "pre", "figcaption", "dt", "dd", "summary"}
+BOILERPLATE = {"footer", "slide number", "page number", "pagenum", "slide counter", "progress", "controls",
+               "navigation", "nav", "pagination", "brand bar"}
+INLINE = {"span", "b", "i", "em", "strong", "a", "code", "small", "u", "mark", "sub", "sup", "br", "abbr", "time", "label"}
 TYPES = {"title", "bullets", "assumptions", "scope", "risks", "next_steps", "gantt", "cost", "flow"}
 
 
 def _cls(el, token: str) -> bool:
     return f" {token} " in f" {(el.get('class') or '').lower().replace('-', ' ')} ".replace("  ", " ") or \
         token in (el.get("class") or "").lower().split()
+
+
+def _is_boilerplate(el) -> bool:
+    toks = " ".join(((el.get("class") or "") + " " + (el.get("id") or "")).lower().replace("-", " ").replace("_", " ").split())
+    return el.tag == "footer" or any(b in f" {toks} " for b in (f" {x} " for x in BOILERPLATE)) or \
+        any(t in toks.split() for t in ("footer", "pagenum"))
+
+
+def _leaf_cells(el):
+    """Texts of a row-like element whose children are all short inline-only cells, else None."""
+    kids = [c for c in el if isinstance(c.tag, str)]
+    if len(kids) < 2:
+        return None
+    out = []
+    for c in kids:
+        if c.tag in ("ul", "ol", "table", "p", "img", "svg") or c.tag in HEADINGS:
+            return None
+        if any(isinstance(d.tag, str) and d.tag not in INLINE for d in c.iterdescendants()):
+            return None
+        t = re.sub(r"\s+", " ", "".join(c.itertext())).strip()
+        if not t or len(t) > 90:
+            return None
+        out.append(t)
+    return out
 
 
 def _txt(el) -> str:
@@ -135,6 +162,8 @@ def extract(el) -> Raw:
         if is_notes(e):
             notes.append(e.get("data-notes") or _txt(e))
             return
+        if _is_boilerplate(e):
+            return
         if tag in HEADINGS:
             t = _txt(e)
             if t:
@@ -161,6 +190,17 @@ def extract(el) -> Raw:
         elif tag == "svg":
             raw.blocks.append(("svg", _txt(e)))
         else:
+            kids = [c for c in e if isinstance(c.tag, str) and c.tag not in SKIP and not _is_boilerplate(c)]
+            rows = [_leaf_cells(c) for c in kids] if len(kids) >= 2 else []
+            if rows and all(rows) and not (e.text or "").strip():  # div grid: .row > .cell, KPI tiles, timeline steps
+                raw.blocks.append(("table", [[(t, "") for t in r] for r in rows]))
+                return
+            own = _leaf_cells(e)
+            if own and not (e.text or "").strip() and e.getparent() is not None:
+                parent_rows = [c for c in e.getparent() if isinstance(c.tag, str)]
+                if len(parent_rows) < 2 or _leaf_cells(parent_rows[0]) is None:
+                    raw.blocks.append(("table", [[(t, "") for t in own]]))
+                    return
             if (e.text or "").strip():
                 raw.blocks.append(("p", re.sub(r"\s+", " ", e.text).strip()))
             for ch in e:
@@ -199,13 +239,32 @@ def _col(header: list[str], *words: str) -> int | None:
     return None
 
 
+def _split_header(rows, *words: str):
+    """(header cells or None, data rows). A first row is a header only if a cell names a known column."""
+    first = [c[0].lower() for c in rows[0]]
+    if any(any(w in cell for w in words) for cell in first):
+        return [c[0] for c in rows[0]], rows[1:]
+    return None, rows
+
+
 def _tables(raw: Raw):
     return [b[1] for b in raw.blocks if b[0] == "table"]
 
 
+def _row_text(row) -> str:
+    cells = [c[0] for c in row if c[0]]
+    keep = [c for c in cells if not re.fullmatch(r"\d{1,2}[.)]?", c)] or cells  # drop step numbers
+    return " \u2014 ".join(keep)
+
+
 def _items(raw: Raw) -> list[str]:
     li = [b[1] for b in raw.blocks if b[0] == "li"]
-    return li or [b[1] for b in raw.blocks if b[0] == "p"]
+    if li:
+        return li
+    paras = [b[1] for b in raw.blocks if b[0] == "p" and not re.fullmatch(r"\d{1,3}", b[1])]
+    if paras:
+        return paras
+    return [_row_text(r) for b in raw.blocks if b[0] == "table" for r in b[1] if _row_text(r)]
 
 
 def _num(t: str) -> float | None:
@@ -219,13 +278,18 @@ def _num(t: str) -> float | None:
 
 def _as_risks(raw: Raw, w: list[str]):
     tabs = _tables(raw)
-    if tabs and len(tabs[0]) > 1:
-        head = [c[0] for c in tabs[0][0]]
-        ri = _col(head, "risk", "dependency", "issue") or 0
-        ii = _col(head, "impact", "severity", "rating")
-        mi = _col(head, "mitigation", "response", "action", "plan")
+    if tabs and len(tabs[0]) >= 1 and len(tabs[0][0]) >= 2:
+        head, data = _split_header(tabs[0], "risk", "impact", "severity", "mitigation", "dependency")
+        if head is None:  # headerless grid: risk | impact | mitigation
+            ri, ii, mi = 0, (1 if len(tabs[0][0]) > 2 else None), (2 if len(tabs[0][0]) > 2 else 1)
+            if ii is not None and tabs[0][0][1][0].strip().lower() not in _IMPACT:
+                ii, mi = None, 1
+        else:
+            ri = _col(head, "risk", "dependency", "issue") or 0
+            ii = _col(head, "impact", "severity", "rating")
+            mi = _col(head, "mitigation", "response", "action", "plan")
         items = []
-        for row in tabs[0][1:]:
+        for row in data:
             cells = [c[0] for c in row]
             imp = _IMPACT.get(cells[ii].strip().lower(), "Medium") if ii is not None and ii < len(cells) else "Medium"
             mit = cells[mi] if mi is not None and mi < len(cells) else ""
@@ -242,13 +306,16 @@ def _as_risks(raw: Raw, w: list[str]):
 
 def _as_next_steps(raw: Raw, w: list[str]):
     tabs = _tables(raw)
-    if tabs and len(tabs[0]) > 1:
-        head = [c[0] for c in tabs[0][0]]
-        ai = _col(head, "action", "step", "task", "what") or 0
-        oi = _col(head, "owner", "who", "responsible")
-        di = _col(head, "due", "when", "date", "timeline")
+    if tabs and len(tabs[0]) >= 1 and len(tabs[0][0]) >= 2:
+        head, data = _split_header(tabs[0], "action", "owner", "due", "who", "when", "task")
+        if head is None:
+            ai, oi, di = 0, (1 if len(tabs[0][0]) > 1 else None), (2 if len(tabs[0][0]) > 2 else None)
+        else:
+            ai = _col(head, "action", "step", "task", "what") or 0
+            oi = _col(head, "owner", "who", "responsible")
+            di = _col(head, "due", "when", "date", "timeline")
         items = []
-        for row in tabs[0][1:]:
+        for row in data:
             cells = [c[0] for c in row]
             if cells and cells[ai]:
                 items.append(NextStep(action=cells[ai], owner=cells[oi] if oi is not None and oi < len(cells) else "",
@@ -372,15 +439,30 @@ def map_slide(raw: Raw, number: int, warnings: list[str]) -> Slide:
         w.append(f"looked like a {kind.replace('_', ' ')} slide but its content did not match; imported as bullets")
     if slide is None:
         bullets: list[str] = []
-        for b in raw.blocks:
+        blocks = raw.blocks
+        skip_next = False
+        for k, b in enumerate(blocks):
+            if skip_next:
+                skip_next = False
+                continue
             if b[0] == "li":
                 bullets.append(("  " * b[2]) + b[1] if b[2] else b[1])
             elif b[0] == "p":
-                bullets.append(b[1])
+                if not re.fullmatch(r"\d{1,3}", b[1]):
+                    bullets.append(b[1])
             elif b[0] == "h":
-                bullets.append(b[2])
+                nxt = blocks[k + 1] if k + 1 < len(blocks) else None
+                if nxt is not None and nxt[0] == "p":  # card: heading + description
+                    bullets.append(f"{b[2]}: {nxt[1]}")
+                    skip_next = True
+                else:
+                    bullets.append(b[2])
             elif b[0] == "table":
-                bullets += [" | ".join(dict.fromkeys(c[0] for c in row if c[0])) for row in b[1] if any(c[0] for c in row)]
+                for row in b[1]:
+                    t = _row_text(row) if len(row) <= 3 and all(len(c[0]) < 40 for c in row) and len(row) == 2 else \
+                        " | ".join(dict.fromkeys(c[0] for c in row if c[0]))
+                    if t:
+                        bullets.append(t)
         slide = Slide(type="bullets", title=raw.title or f"Slide {number}", bullets=[x.strip() for x in bullets if x.strip()][:25])
     pics = sum(1 for b in raw.blocks if b[0] == "img")
     svgs = sum(1 for b in raw.blocks if b[0] == "svg")
