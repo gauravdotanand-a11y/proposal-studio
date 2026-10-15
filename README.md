@@ -39,6 +39,10 @@ review each draft, then add them to the deck as one undoable step. Needs a confi
 - **Import** (toolbar `...` menu): a `.pptx` exported by this app restores the whole deck exactly (the source is embedded as a
   standard customXml item; set `STUDIO_EMBED_SOURCE=0` to disable). Other `.pptx` files import as editable bullet slides
   (text and tables only). `.json` / `.yaml` proposals import directly. **Download project file** saves the deck as JSON.
+- **HTML decks** (for example written by Copilot): import a `.html` file. Slides are split by `section`/`.slide`/headings,
+  scripts are never executed, and slides map to assumptions, scope, risks, next steps, Gantt, cost or a simple flow
+  (from `data-type` hints or title keywords), otherwise bullets. See `docs/copilot-html-contract.md` for a prompt
+  that makes Copilot produce HTML that imports cleanly.
 - **PDF export**: needs LibreOffice (`soffice`) on the machine running the backend; the menu item is disabled otherwise.
 - **Accessibility**: tables and diagram shapes carry alt text (arrows read as "Arrow from A to B (Yes)").
 

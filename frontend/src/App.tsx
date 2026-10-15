@@ -293,7 +293,7 @@ export default function App() {
           <Tooltip title="More: import, project file, PDF">
             <IconButton aria-label="more actions" onClick={(e) => setMoreEl(e.currentTarget)}><MoreVert /></IconButton>
           </Tooltip>
-          <input ref={importRef} type="file" hidden accept=".pptx,.potx,.json,.yaml,.yml"
+          <input ref={importRef} type="file" hidden accept=".pptx,.potx,.json,.yaml,.yml,.html,.htm"
             onChange={(e) => e.target.files?.[0] && doImport(e.target.files[0])} />
           {narrow ? (
             <>
@@ -391,7 +391,7 @@ export default function App() {
         ))}
       </Menu>
       <Menu anchorEl={moreEl} open={!!moreEl} onClose={() => setMoreEl(null)}>
-        <MenuItem onClick={() => { setMoreEl(null); importRef.current?.click(); }}>Import deck (.pptx, .json, .yaml)</MenuItem>
+        <MenuItem onClick={() => { setMoreEl(null); importRef.current?.click(); }}>Import deck (.pptx, .html, .json, .yaml)</MenuItem>
         <MenuItem onClick={() => { setMoreEl(null); download(new Blob([JSON.stringify(clean(p), null, 2)], { type: "application/json" }), `${name || "proposal"}.json`); }}>
           Download project file (.json)</MenuItem>
         <MenuItem disabled={!canPdf || busy} onClick={() => { setMoreEl(null); doExport("pdf"); }}>

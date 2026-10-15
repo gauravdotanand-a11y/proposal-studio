@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Invoice Intake Automation</title>
+<style>
+  body { margin: 0; font-family: Segoe UI, Arial, sans-serif; background: #111; }
+  .slide { width: 100vw; height: 100vh; padding: 6vh 8vw; box-sizing: border-box; background: #fff; display: none; }
+  .slide.active { display: block; }
+  .bar { background: #ff4f1f; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { border: 1px solid #ccc; padding: 6px 10px; }
+</style>
+<script>
+  // Navigation written by the generator; never executed by the importer.
+  let i = 0; const s = document.querySelectorAll('.slide');
+  document.addEventListener('keydown', e => { if (e.key === 'ArrowRight') { s[i].classList.remove('active'); i = Math.min(i + 1, s.length - 1); s[i].classList.add('active'); } });
+</script>
+</head>
+<body>
+
+<section class="slide active" data-type="title">
+  <h1>Invoice Intake Automation</h1>
+  <p class="subtitle">OCR and RPA for purchase invoices</p>
+  <aside class="notes">Welcome everyone. Keep this slide to 30 seconds.</aside>
+</section>
+
+<section class="slide">
+  <h2>Executive summary</h2>
+  <ul>
+    <li>Analysts key about 4,000 invoices a month by hand</li>
+    <li>OCR plus an RPA bot creates records and routes exceptions</li>
+    <li>Expected automation success rate is 60-70% initially</li>
+  </ul>
+</section>
+
+<section class="slide" data-type="assumptions">
+  <h2>Assumptions</h2>
+  <ol>
+    <li>Test data and lower-environment access are provided before build starts.</li>
+    <li>Only standard purchase invoices are in scope for phase one.</li>
+    <li>Exceptions are handled by analysts in a manual queue.</li>
+  </ol>
+</section>
+
+<section class="slide">
+  <h2>Scope</h2>
+  <h3>In scope</h3>
+  <ul><li>Standard purchase invoices from the shared mailbox</li><li>Field extraction and SOP validation</li></ul>
+  <h3>Out of scope</h3>
+  <ul><li>Handwritten invoices</li><li>Payment processing</li></ul>
+</section>
+
+<section class="slide" data-type="risks">
+  <h2>Risks and dependencies</h2>
+  <table>
+    <tr><th>Risk</th><th>Impact</th><th>Mitigation</th></tr>
+    <tr><td>OCR accuracy lower on scanned invoices</td><td>High</td><td>Confidence thresholds with analyst review</td></tr>
+    <tr><td>SME availability during UAT</td><td>Medium</td><td>Book SME slots in the plan</td></tr>
+  </table>
+</section>
+
+<section class="slide">
+  <h2>Execution plan</h2>
+  <table>
+    <tr><th>Activity</th><th>Week 1</th><th>Week 2</th><th>Week 3</th><th>Week 4</th></tr>
+    <tr><td>Requirements</td><td class="bar"></td><td></td><td></td><td></td></tr>
+    <tr><td>Build</td><td></td><td class="bar"></td><td class="bar"></td><td></td></tr>
+    <tr><td>UAT</td><td></td><td></td><td></td><td style="background:#ff4f1f"></td></tr>
+  </table>
+</section>
+
+<section class="slide">
+  <h2>Cost and benefits</h2>
+  <table>
+    <tr><th>Cost head</th><th>Y0</th><th>Y1</th><th>Y2</th><th>Total</th></tr>
+    <tr><td>Development</td><td>$75,000</td><td>-</td><td>-</td><td>$75,000</td></tr>
+    <tr><td>Infrastructure</td><td>$12,000</td><td>$12,000</td><td>$12,000</td><td>$36,000</td></tr>
+    <tr><td>Benefits</td><td>$20,000</td><td>$180,000</td><td>$180,000</td><td>$380,000</td></tr>
+  </table>
+</section>
+
+<section class="slide" data-type="flow">
+  <h2>Automated process</h2>
+  <ol><li>Bot picks next email</li><li>OCR extracts fields</li><li>Bot validates against SOP</li><li>Record created or routed to analyst</li></ol>
+  <img src="architecture.png" alt="Architecture">
+</section>
+
+<section class="slide">
+  <h2>Thank you</h2>
+  <p>Questions?</p>
+</section>
+</body>
+</html>

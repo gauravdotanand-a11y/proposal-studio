@@ -141,9 +141,20 @@ def from_text(data: bytes) -> tuple[Proposal, list[str], str]:
         raise ImportError_(f"not a valid proposal: {'.'.join(str(x) for x in first['loc'])}: {first['msg']}") from e
 
 
+def _looks_like_html(data: bytes) -> bool:
+    head = data[:4096].lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+    return head.startswith((b"<!doctype html", b"<html", b"<head", b"<body", b"<section", b"<div", b"<!--", b"<article", b"<h1"))
+
+
 def import_any(data: bytes) -> tuple[Proposal, list[str], str]:
     if data[:2] == b"PK":
         return from_pptx(data)
+    if _looks_like_html(data):
+        from . import htmlimport
+        try:
+            return htmlimport.from_html(data)
+        except ValueError as e:
+            raise ImportError_(str(e)) from e
     return from_text(data)
 
 
