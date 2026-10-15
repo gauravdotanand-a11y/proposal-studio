@@ -288,9 +288,9 @@ def _build_edges(f: Flow, pos: dict[str, Box], gap_x: float, corr: float) -> lis
         edge = {"src": e.src, "dst": e.dst, "label": e.label, "note": e.note,
                 "points": [[int(round(px)), int(round(py))] for px, py in pts],
                 "label_x": lx, "label_y": ly, "begin_site": None, "end_site": None, "note_box": None}
-        if len(pts) == 2:
+        if len(pts) in (2, 3, 4):  # straight or elbow that the renderer can glue
             edge["begin_site"] = _site_of(pos[e.src], pts[0])
-            edge["end_site"] = _site_of(pos[e.dst], pts[1])
+            edge["end_site"] = _site_of(pos[e.dst], pts[-1])
         if e.note:
             edge["note_box"] = list(_note_box(pts, gap_x))
         edges.append(edge)

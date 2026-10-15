@@ -86,7 +86,7 @@ Ordered by priority.
 | ~~P1~~ | ~~Audit remaining editors at desktop and narrow widths~~ | DONE 2026-10-15: all editors checked at desktop and 400px; clipping fixed in solution, risks, next steps and plan-revision editors |
 | ~~P1~~ | ~~Packaging for a locked-down machine~~ | Dropped: Python and npm are allowed in the user's org, so a normal install is enough |
 | P1 | Test AI assist against real Azure OpenAI | OpenAI-compatible path verified live (2026-10-15, synthetic data). Azure uses a different URL and `api-key` header and has only been tested against a mock |
-| P2 | Keep bent arrows attached in PowerPoint | Straight arrows are glued; bent ones are freeform lines that do not follow moved boxes |
+| P2 | Keep bent arrows attached in PowerPoint | Mostly DONE 2026-10-15: H-V-H bends are elbow connectors glued to both boxes (cylinder and oval connection sites remapped). Still freeform: U-shaped routes that return to the same x (e.g. decision to the box below it) and vertical-first bends. Not yet verified in real PowerPoint |
 | ~~P2~~ | ~~More AI tasks~~ | DONE 2026-10-15: executive summary, risks, scope and benefit drivers (benefit figures not in the input are cleared). UI buttons on scope, risks and cost editors; summary available via API |
 | ~~P2~~ | ~~AI evaluation set~~ | DONE 2026-10-15: `backend/studio/evalset.py` (7 synthetic cases, rubric checks). Run `python -m studio.evalset` against a configured provider; not yet run live |
 | ~~P2~~ | ~~Frontend unit tests~~ | DONE 2026-10-15: vitest, 10 tests (cost maths, AI review rows, factory, undo/redo) |

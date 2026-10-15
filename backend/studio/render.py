@@ -388,19 +388,36 @@ def _flow_slide(slide, f: Flow):
             badges.append(n)
 
     kinds = {n["id"]: n["kind"] for n in lay["nodes"]}
-    # PowerPoint connection-site index differs per shape: ellipses have 8 sites.
-    ellipse_idx = {0: 0, 1: 2, 2: 4, 3: 6}
+    # PowerPoint connection-site index differs per shape: ellipses have 8 sites, cylinders 5.
+    site_idx = {"start": {0: 0, 1: 2, 2: 4, 3: 6}, "end": {0: 0, 1: 2, 2: 4, 3: 6},
+                "data": {0: 1, 1: 2, 2: 3, 3: 4}}
     for e in lay["edges"]:
         pts = e["points"]
-        if len(pts) == 2 and e["begin_site"] is not None and e["end_site"] is not None:
-            cx = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, 0, 0, 0, 0)
+        glued = e["begin_site"] is not None and e["end_site"] is not None
+        elbow = (len(pts) == 4 and glued and pts[0][1] == pts[1][1] and pts[1][0] == pts[2][0]
+                 and pts[2][1] == pts[3][1] and pts[3][0] != pts[0][0])
+        corner = (len(pts) == 3 and glued and pts[0][1] == pts[1][1] and pts[1][0] == pts[2][0]
+                  and pts[2][0] != pts[0][0] and pts[2][1] != pts[1][1])  # horizontal leg, then vertical
+        if glued and (len(pts) == 2 or elbow or corner):
+            kind = MSO_CONNECTOR.STRAIGHT if len(pts) == 2 else MSO_CONNECTOR.ELBOW
+            cx = slide.shapes.add_connector(kind, 0, 0, 0, 0)
             cx.begin_connect(shapes[e["src"]], e["begin_site"])
             cx.end_connect(shapes[e["dst"]], e["end_site"])
             for tag, node, site in (("stCxn", e["src"], e["begin_site"]), ("endCxn", e["dst"], e["end_site"])):
-                if kinds[node] in ("start", "end"):
+                remap = site_idx.get(kinds[node])
+                if remap:
                     el = cx._element.nvCxnSpPr.cNvCxnSpPr.find(f"{{{_NS_A}}}{tag}")
                     if el is not None:
-                        el.set("idx", str(ellipse_idx[site]))
+                        el.set("idx", str(remap[site]))
+            if corner:
+                cx._element.spPr.find(f"{{{_NS_A}}}prstGeom").set("prst", "bentConnector2")
+            if elbow:  # place the vertical leg where the layout routed it (fraction of the width)
+                frac = (pts[1][0] - pts[0][0]) / (pts[3][0] - pts[0][0])
+                geom = cx._element.spPr.find(f"{{{_NS_A}}}prstGeom")
+                av = geom.find(f"{{{_NS_A}}}avLst")
+                if av is None:
+                    av = etree.SubElement(geom, f"{{{_NS_A}}}avLst")
+                etree.SubElement(av, f"{{{_NS_A}}}gd", name="adj1", fmla=f"val {int(round(frac * 100000))}")
             line_owner = cx
         else:
             fb = slide.shapes.build_freeform(pts[0][0], pts[0][1])
