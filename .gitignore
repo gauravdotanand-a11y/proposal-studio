@@ -10,3 +10,5 @@ __pycache__/
 *.png
 .claude/
 .DS_Store
+
+.env

@@ -88,3 +88,19 @@ def test_reasoning_models_get_no_temperature():
     llm.OpenAICompatible("http://x/v1", "k", "gpt-5-mini").complete([], c)
     llm.OpenAICompatible("http://x/v1", "k", "gpt-4o-mini").complete([], c)
     assert "temperature" not in seen[0] and seen[1]["temperature"] == 0.2
+
+
+def test_env_file_loader_reads_only_llm_keys_and_keeps_existing(tmp_path, monkeypatch):
+    from studio import llm
+    f = tmp_path / ".env"
+    f.write_text("LLM_PROVIDER=openai\nOPENAI_MODEL='m1'\nOPENAI_API_KEY=k\nHOME=/evil\n# c\nbad line\n")
+    for k in ("LLM_PROVIDER", "OPENAI_MODEL", "OPENAI_API_KEY"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "already")
+    monkeypatch.setattr(llm, "_ENV_LOADED", False)
+    llm.load_env_file(f)
+    import os
+    assert os.environ["LLM_PROVIDER"] == "openai" and os.environ["OPENAI_MODEL"] == "m1"
+    assert os.environ["OPENAI_API_KEY"] == "already" and os.environ["HOME"] != "/evil"
+    for k in ("LLM_PROVIDER", "OPENAI_MODEL"):
+        monkeypatch.delenv(k, raising=False)

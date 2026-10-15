@@ -9,6 +9,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from difflib import SequenceMatcher
 from typing import Literal, Optional
 from urllib.parse import urlparse
@@ -570,7 +571,36 @@ def _post(url: str, headers: dict, payload: dict, client: Optional[httpx.Client]
         raise LLMError("unexpected response shape from LLM endpoint") from e
 
 
+_ENV_LOADED = False
+
+
+def load_env_file(path: Path | None = None) -> None:
+    """Load KEY=VALUE lines from the project's git-ignored `.env` into the process environment.
+
+    Existing environment variables win, values are never logged, and the file is read once.
+    """
+    global _ENV_LOADED
+    if _ENV_LOADED and path is None:
+        return
+    _ENV_LOADED = True
+    path = path or Path(__file__).resolve().parents[2] / ".env"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k, v = k.strip(), v.strip().strip('"').strip("'")
+        if re.fullmatch(r"[A-Z][A-Z0-9_]*", k) and k.startswith(("LLM_", "OPENAI_", "AZURE_OPENAI_")):
+            os.environ.setdefault(k, v)
+
+
 def get_provider(env: dict | None = None) -> Provider:
+    if env is None:
+        load_env_file()
     env = os.environ if env is None else env
     kind = env.get("LLM_PROVIDER", "none").lower()
     if kind == "azure":
